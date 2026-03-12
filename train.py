@@ -139,6 +139,7 @@ for epoch in range(cfg.n_epochs):
         vol_loss = (sq_err * vol_mask.unsqueeze(-1)).sum() / vol_mask.sum().clamp(min=1)
         surf_loss = (sq_err * surf_mask.unsqueeze(-1)).sum() / surf_mask.sum().clamp(min=1)
         loss = vol_loss + cfg.surf_weight * surf_loss
+        wandb.log({"train/loss": loss.item()})
 
         optimizer.zero_grad()
         loss.backward()
@@ -190,7 +191,7 @@ for epoch in range(cfg.n_epochs):
 
     val_vol /= n_val
     val_surf /= n_val
-    val_total = val_vol + cfg.surf_weight * val_surf
+    val_loss = val_vol + cfg.surf_weight * val_surf
     mae_surf /= max(n_surf, 1)
     mae_vol /= max(n_vol, 1)
 
@@ -202,7 +203,7 @@ for epoch in range(cfg.n_epochs):
         "train/surf_loss": epoch_surf,
         "val/vol_loss": val_vol,
         "val/surf_loss": val_surf,
-        "val/total_loss": val_total,
+        "val/loss": val_loss,
         "val/mae_vol_Ux": mae_vol[0].item(),
         "val/mae_vol_Uy": mae_vol[1].item(),
         "val/mae_vol_p": mae_vol[2].item(),
@@ -214,9 +215,14 @@ for epoch in range(cfg.n_epochs):
     }
     wandb.log(metrics, step=epoch + 1)
 
+    if torch.cuda.is_available():
+        peak_mem_gb = torch.cuda.max_memory_allocated() / 1e9
+    else:
+        peak_mem_gb = 0.0
+
     tag = ""
-    if val_total < best_val:
-        best_val = val_total
+    if val_loss < best_val:
+        best_val = val_loss
         best_metrics = {
             "mae_vol_Ux": mae_vol[0].item(),
             "mae_vol_Uy": mae_vol[1].item(),
@@ -225,13 +231,13 @@ for epoch in range(cfg.n_epochs):
             "mae_surf_Uy": mae_surf[1].item(),
             "mae_surf_p": mae_surf[2].item(),
             "epoch": epoch + 1,
-            "val_total_loss": val_total,
+            "val_loss_loss": val_loss,
         }
         torch.save(model.state_dict(), model_path)
         tag = f" * -> {model_path}"
 
     print(
-        f"Epoch {epoch+1:3d} ({dt:.0f}s)  "
+        f"Epoch {epoch+1:3d} ({dt:.0f}s) [{peak_mem_gb:.1f}GB]  "
         f"train[vol={epoch_vol:.4f} surf={epoch_surf:.4f}]  "
         f"val[vol={val_vol:.4f} surf={val_surf:.4f}]  "
         f"mae_vol=[Ux:{mae_vol[0]:.2f} Uy:{mae_vol[1]:.2f} p:{mae_vol[2]:.1f}]  "
@@ -245,7 +251,7 @@ print(f"TRAINING COMPLETE ({total_time:.1f} min)")
 print("=" * 70)
 if best_metrics:
     print(f"Best model at epoch {best_metrics['epoch']}")
-    print(f"  Val total loss: {best_metrics['val_total_loss']:.4f}")
+    print(f"  Val total loss: {best_metrics['val_loss_loss']:.4f}")
     print(f"  Volume  MAE:  Ux={best_metrics['mae_vol_Ux']:.2f}  Uy={best_metrics['mae_vol_Uy']:.2f}  p={best_metrics['mae_vol_p']:.1f}")
     print(f"  Surface MAE:  Ux={best_metrics['mae_surf_Ux']:.2f}  Uy={best_metrics['mae_surf_Uy']:.2f}  p={best_metrics['mae_surf_p']:.1f}")
 else:
