@@ -25,7 +25,7 @@
 
 **Subtotal: 2,700 samples (900 unique simulations x 3 file variants)**
 
-Parts 1/2/3 correspond to **different Reynolds numbers**: Re=1,475,000 / Re=4,445,000 / Re=802,000. The `ive`, `mgn`, and `mgn_extrap` variants share identical CFD data but attach different pre-computed model predictions.
+Parts 1/2/3 correspond to **different Reynolds numbers**: Re=1,475,000 / Re=4,445,000 / Re=802,000. The `ive`, `mgn`, and `mgn_extrap` variants share identical CFD data but attach different pre-computed baseline model predictions (see Section 3.7).
 
 ### 1.2 Cruise — Re=500 (tandem foils, fixed Re, fixed AoA)
 
@@ -38,7 +38,7 @@ Parts 1/2/3 correspond to **different Reynolds numbers**: Re=1,475,000 / Re=4,44
 
 **Subtotal: 3,136 samples (784 unique simulations x 2 AoA x 2 file variants)**
 
-Parts 1/2/3 sweep **different NACA leading-foil families**: 0006 / 1408 / 2418. The `aoa0` vs `aoa5` variants differ only in angle of attack (0° vs 5° for both foils). The `ive` vs `mgn` variants share identical CFD data but attach different predictions.
+Parts 1/2/3 sweep **different NACA leading-foil families**: 0006 / 1408 / 2418. The `aoa0` vs `aoa5` variants differ only in angle of attack (0° vs 5° for both foils). The `ive` vs `mgn` variants share identical CFD data but attach different baseline predictions (see Section 3.7).
 
 ### 1.3 RaceCar — Single Element (single foil, variable Re)
 
@@ -95,7 +95,7 @@ Each sample is a `torch_geometric.data.Data` graph object with the following fie
 
 | Field | Shape | dtype | Description |
 |-------|-------|-------|-------------|
-| `y` | `(N, 3)` | float16 | **Target: [Ux, Uy, omega]** — velocity components and specific turbulence dissipation rate |
+| `y` | `(N, 3)` | float16 | **Target: [Ux, Uy, p]** — velocity components and kinematic pressure (p/ρ, m²/s²) |
 
 ### 3.3 Input Features (Geometric Encodings)
 
@@ -135,6 +135,23 @@ Each sample is a `torch_geometric.data.Data` graph object with the following fie
 | `y_est_model_*_extrapAOA` | `(N, 3)` | float32 | `mgn_extrap` files |
 
 These are predictions from pre-trained single-element surrogate models applied to the tandem configurations. Useful as baselines or as input features for transfer learning.
+
+### 3.7 File Variant Suffixes: IVE vs MGN vs MGN_extrap
+
+The `ive`, `mgn`, and `mgn_extrap` suffixes denote which **baseline surrogate model's predictions** are attached to the file. The underlying CFD ground truth (`y`, `pos`, `edge_index`, etc.) is identical across variants for the same Part — only the `y_est_*` prediction field and some extra metadata differ.
+
+| Suffix | Baseline model | Mesh resolution (typical) | Extra fields |
+|--------|---------------|--------------------------|--------------|
+| `ive` | **IVE** — Implicit Volume Estimator (paper's own method) | ~209K–349K nodes | — |
+| `mgn` | **MGN** — MeshGraphNet (GNN baseline from DeepMind) | ~114K–209K nodes | `hc_net`, `hcb_net`, `scb_net`, `height`, `resize` |
+| `mgn_extrap` | **MGN** with extrapolation predictions | Same as `mgn` | Same as `mgn`, plus `y_est_*_extrapRE` and `y_est_*_extrapAOA` |
+
+**Key differences:**
+- **IVE files have denser meshes** than MGN files for the same simulation (e.g., cruise: ~209K vs ~114K nodes). The two variants use different mesh resolutions tailored to each baseline model.
+- **MGN files include extra geometry metadata** (`hc_net`, `hcb_net`, `scb_net`, `height`, `resize`) that the IVE files omit.
+- **MGN_extrap files** additionally store predictions from a model trained on a different Re or AoA range, enabling extrapolation analysis.
+
+> **For downstream training:** Pick one variant per Part (e.g., always `mgn` for smaller meshes, or `ive` for denser meshes). You only need the ground truth `y` — the `y_est_*` fields are optional baselines.
 
 ---
 
@@ -185,9 +202,9 @@ The `boundary` field (uint8) encodes 8 distinct boundary types:
 | 2 | Outlet |
 | 3 | Top wall |
 | 4 | Bottom wall |
-| 5 | Airfoil surface (foil 1) |
-| 6 | Airfoil surface (foil 2) |
-| 7 | Wake / symmetry (tandem only) |
+| 5 | Airfoil surface (foil 1, upper/main) |
+| 6 | Airfoil surface (foil 1, lower/trailing edge) |
+| 7 | Airfoil surface (foil 2, tandem only) |
 
 > Note: Single-element files use values 0–6; tandem files use 0–7.
 
@@ -207,7 +224,7 @@ Single-element files: `{0, 1}`. Tandem files: `{0, 1, 2}`.
 
 ## 7. Value Ranges and Statistics
 
-### 7.1 Target Field `y` — [Ux, Uy, omega]
+### 7.1 Target Field `y` — [Ux, Uy, p]
 
 | Subset | Re range | y min | y max | y mean | y std |
 |--------|----------|-------|-------|--------|-------|
@@ -308,9 +325,9 @@ The `ive`/`mgn`/`mgn_extrap` file variants contain **identical ground truth**. F
 
 ### 9.3 Target
 
-- `y` (N, 3): [Ux, Uy, omega] — velocity field + specific dissipation
+- `y` (N, 3): [Ux, Uy, p] — velocity field + kinematic pressure (p/ρ)
 - Consider predicting **normalized residuals** relative to freestream: `(y - y_freestream) / scale`
-- The omega channel has much larger magnitude and variance — consider separate loss weighting or log-scaling
+- The pressure channel has much larger magnitude and variance — consider separate loss weighting
 
 ### 9.4 Data Splits
 
