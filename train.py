@@ -4,6 +4,7 @@ import time
 import torch
 import wandb
 from dataclasses import dataclass, asdict
+from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, random_split, Subset
 import simple_parsing as sp
@@ -20,7 +21,8 @@ class Config:
     n_head: int = 4
     slice_num: int = 64
     mlp_ratio: int = 2
-    n_epochs: int = 50
+    n_epochs: int = 10
+    max_minutes: float = 5.0
     lr: float = 5e-4
     weight_decay: float = 1e-4
     batch_size: int = 16
@@ -97,10 +99,21 @@ run = wandb.init(
     mode="offline" if cfg.debug else "online",
 )
 
+model_dir = Path("models")
+model_dir.mkdir(exist_ok=True)
+model_path = model_dir / f"model-{run.id}.pt"
+
 best_val = float("inf")
 best_metrics = {}
+train_start = time.time()
 
 for epoch in range(cfg.n_epochs):
+    # Check wall-clock timeout
+    elapsed_min = (time.time() - train_start) / 60.0
+    if elapsed_min >= cfg.max_minutes:
+        print(f"Wall-clock limit reached ({elapsed_min:.1f} min >= {cfg.max_minutes} min). Stopping.")
+        break
+
     t0 = time.time()
 
     # --- Train ---
@@ -214,8 +227,8 @@ for epoch in range(cfg.n_epochs):
             "epoch": epoch + 1,
             "val_total_loss": val_total,
         }
-        torch.save(model.state_dict(), "best_model.pt")
-        tag = " *"
+        torch.save(model.state_dict(), model_path)
+        tag = f" * -> {model_path}"
 
     print(
         f"Epoch {epoch+1:3d} ({dt:.0f}s)  "
@@ -226,21 +239,26 @@ for epoch in range(cfg.n_epochs):
     )
 
 # --- Final summary ---
+total_time = (time.time() - train_start) / 60.0
 print("\n" + "=" * 70)
-print("TRAINING COMPLETE")
+print(f"TRAINING COMPLETE ({total_time:.1f} min)")
 print("=" * 70)
-print(f"Best model at epoch {best_metrics['epoch']}")
-print(f"  Val total loss: {best_metrics['val_total_loss']:.4f}")
-print(f"  Volume  MAE:  Ux={best_metrics['mae_vol_Ux']:.2f}  Uy={best_metrics['mae_vol_Uy']:.2f}  p={best_metrics['mae_vol_p']:.1f}")
-print(f"  Surface MAE:  Ux={best_metrics['mae_surf_Ux']:.2f}  Uy={best_metrics['mae_surf_Uy']:.2f}  p={best_metrics['mae_surf_p']:.1f}")
+if best_metrics:
+    print(f"Best model at epoch {best_metrics['epoch']}")
+    print(f"  Val total loss: {best_metrics['val_total_loss']:.4f}")
+    print(f"  Volume  MAE:  Ux={best_metrics['mae_vol_Ux']:.2f}  Uy={best_metrics['mae_vol_Uy']:.2f}  p={best_metrics['mae_vol_p']:.1f}")
+    print(f"  Surface MAE:  Ux={best_metrics['mae_surf_Ux']:.2f}  Uy={best_metrics['mae_surf_Uy']:.2f}  p={best_metrics['mae_surf_p']:.1f}")
+else:
+    print("No completed epochs (timeout too short?).")
 
-wandb.summary.update({"best_" + k: v for k, v in best_metrics.items()})
+if best_metrics:
+    wandb.summary.update({"best_" + k: v for k, v in best_metrics.items()})
 
-# Generate visualizations with best model
-print("\nGenerating flow field plots...")
-model.load_state_dict(torch.load("best_model.pt", map_location=device, weights_only=True))
-images = visualize(model, val_ds, stats, device, n_samples=2 if cfg.debug else 4)
-if images:
-    wandb.log({"val_predictions": [wandb.Image(str(p)) for p in images]})
+    # Generate visualizations with best model
+    print("\nGenerating flow field plots...")
+    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    images = visualize(model, val_ds, stats, device, n_samples=2 if cfg.debug else 4)
+    if images:
+        wandb.log({"val_predictions": [wandb.Image(str(p)) for p in images]})
 
 wandb.finish()
