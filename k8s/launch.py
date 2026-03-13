@@ -29,9 +29,16 @@ class Args:
 
 
 def render_job(template: str, agent_name: str, tag: str, args: Args) -> str:
-    """Replace placeholders in the job template."""
-    out = template.replace("AGENT_NAME", agent_name)
-    out = out.replace("RESEARCH_TAG", tag)
+    """Replace {{PLACEHOLDER}} tokens in the job template."""
+    replacements = {
+        "AGENT_NAME": agent_name,
+        "RESEARCH_TAG": tag,
+        "WANDB_ENTITY": args.wandb_entity,
+    }
+    out = template
+    for key, value in replacements.items():
+        out = out.replace(f"{{{{{key}}}}}", value)
+    # These aren't wrapped in {{ }} — match on exact values
     out = out.replace(
         'value: "https://github.com/wandb/senpai.git"',
         f'value: "{args.repo_url}"',
@@ -44,7 +51,6 @@ def render_job(template: str, agent_name: str, tag: str, args: Args) -> str:
         "image: ghcr.io/tcapelle/senpai-agent:latest",
         f"image: {args.image}",
     )
-    out = out.replace("WANDB_ENTITY_PLACEHOLDER", args.wandb_entity)
     return out
 
 
