@@ -4,7 +4,6 @@
 
 """Train Transolver on full-field airfoil flow prediction with separate surface/volume losses."""
 
-import json
 import time
 import torch
 import wandb
@@ -22,17 +21,6 @@ from utils import visualize, dataset_stats
 
 MAX_TIMEOUT = 5.0 # minutes
 MAX_EPOCHS = 20
-STATUS_DIR = Path("/mnt/new-pvc/senpai/status")
-
-
-def write_status(agent: str | None, status: dict):
-    """Write agent status to shared PVC so the orchestrator can read it."""
-    if not agent:
-        return
-    STATUS_DIR.mkdir(parents=True, exist_ok=True)
-    path = STATUS_DIR / f"{agent}.json"
-    path.write_text(json.dumps(status, indent=2))
-
 @dataclass
 class Config:
     lr: float = 5e-4
@@ -251,18 +239,6 @@ for epoch in range(MAX_EPOCHS):
         f"mae_surf=[Ux:{mae_surf[0]:.2f} Uy:{mae_surf[1]:.2f} p:{mae_surf[2]:.1f}]{tag}"
     )
 
-    write_status(cfg.agent, {
-        "state": "training",
-        "epoch": epoch + 1,
-        "val_loss": val_loss,
-        "best_val_loss": best_val,
-        "surf_mae": {"Ux": mae_surf[0].item(), "Uy": mae_surf[1].item(), "p": mae_surf[2].item()},
-        "peak_memory_gb": peak_mem_gb,
-        "wandb_run": run.id,
-        "wandb_name": cfg.wandb_name,
-        "wandb_group": cfg.wandb_group,
-        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    })
 
 # --- Final summary ---
 total_time = (time.time() - train_start) / 60.0
@@ -279,20 +255,6 @@ else:
 
 if best_metrics:
     wandb.summary.update({"best_" + k: v for k, v in best_metrics.items()})
-    write_status(cfg.agent, {
-        "state": "done",
-        "best_epoch": best_metrics["epoch"],
-        "best_val_loss": best_metrics["val_loss_loss"],
-        "surf_mae": {
-            "Ux": best_metrics["mae_surf_Ux"],
-            "Uy": best_metrics["mae_surf_Uy"],
-            "p": best_metrics["mae_surf_p"],
-        },
-        "wandb_run": run.id,
-        "wandb_name": cfg.wandb_name,
-        "wandb_group": cfg.wandb_group,
-        "updated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
-    })
 
     # Generate visualizations with best model
     print("\nGenerating flow field plots...")
