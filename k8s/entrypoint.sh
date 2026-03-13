@@ -29,7 +29,7 @@ uv pip install --system -e .
 
 # --- Git identity for commits ---
 git config user.name "senpai-$AGENT_ID"
-git config user.email "senpai-$AGENT_ID@autoresearch"
+git config user.email "senpai-$AGENT_ID@senpai"
 
 # --- Install Claude Code ---
 curl -fsSL https://claude.ai/install.sh | bash
@@ -51,11 +51,13 @@ Read program.md for the full protocol. Follow the setup and experiment loop.
 
 Key context for this run:
 - Research tag: $RESEARCH_TAG
-- Your agent ID: $AGENT_ID — use this in your branch names (e.g. autoresearch/$RESEARCH_TAG/$AGENT_ID)
+- Your agent ID: $AGENT_ID — use this in your branch names (e.g. senpai/$RESEARCH_TAG/$AGENT_ID)
 - You have 8 GPUs on this node. Use the worktree-based parallel workflow from program.md.
 - You are one of several parallel agents. Always pass these flags to train.py:
-  --agent $AGENT_ID --wandb_group $AGENT_ID --wandb_name "$AGENT_ID/<experiment-description>"
-  For example: --agent pepe --wandb_group pepe --wandb_name "pepe/baseline"
+  --agent $AGENT_ID --wandb_name "$AGENT_ID/<experiment-description>"
+  Use --wandb_group only to group iterations on the same idea (e.g. --wandb_group "multi-scale-attn").
+  For example: --agent pepe --wandb_name "pepe/baseline"
+  Or: --agent pepe --wandb_group "local-attention" --wandb_name "pepe/local-attention-v2"
 - W&B project "senpai" is shared across all agents. Check existing runs there to avoid duplicating work.
 - The dataset is at /mnt/new-pvc/datasets/tandemfoil/
 
