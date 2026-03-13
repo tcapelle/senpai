@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 
-set -e
+set -ex
 set -o pipefail
 
 REPO_URL="${SENPAI_REPO_URL:?SENPAI_REPO_URL is required}"
@@ -43,7 +43,8 @@ curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
 apt-get update && apt-get install -y gh
-echo "$GITHUB_TOKEN" | gh auth login --with-token
+# gh uses GITHUB_TOKEN env var automatically, no explicit login needed
+echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Launch Claude Code ---
 export IS_SANDBOX=1
