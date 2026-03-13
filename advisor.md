@@ -28,7 +28,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
    - Identify: which students are idle (no `status:wip` PR), which PRs are awaiting review (`status:review`).
 
 2. **Review completed PRs** (`status:review`)
-   For each PR ready for review:
+   For each PR that is ready for review:
    - Read the PR body — especially the Results section.
    - Check the W&B run if you need more detail on the metrics.
    - Decide:
@@ -47,25 +47,39 @@ Read `program.md` for the full research context, constraints, metrics, and file 
        ```
 
 3. **Create new hypotheses** for idle students
-   For each student without a `status:wip` PR:
-   - Pick the most promising idea based on current results, what's been tried, and what hasn't.
-   - Create a branch and draft PR:
-     ```bash
-     git checkout main && git pull
-     git checkout -b exp/<hypothesis-name>
-     git push -u origin exp/<hypothesis-name>
-     gh pr create --draft \
-       --title "<hypothesis>" \
-       --body "<PR body template — see below>" \
-       --label "senpai" --label "student:<name>" --label "status:wip" \
-       --base main --head exp/<hypothesis-name>
-     ```
+   Assign to a new hypothesis to test to each student without a `status:wip` PR. Use a sub-agent, powered by the Opus model, to review all previous experiments and generate fresh new hypothesis to test. Give the sub-agent the following instructions plus any additional context you think might be relevant:
+
+  <research-sub-agent-instructions>
+   - [The context and goals of this research programme.]
+   - The sub-agents' goal is to find fresh, new experimental ideas to test for this programme.
+   - The sub-agent should first review what ideas have been tried already:
+     - It can find every experiment that has been run or is currently running by using the `list-experiments` skill
+     - Every PR in our repo is an experiment idea and result - some PRs might contain multiple trials releated to the same idea.
+     - The `list-experiments` skill will enable the sub-agent to download files with details of all the experiments, which is can then start to explore.
+   - Once the sub-agent has reviewed the past experiments long and hard, its time to consider new experiments to try.
+   - Instruct the sub-agent to think creatively, attacking our research from multiple different machine learning, computer science, mathematics, optimization and systems design angles. Schmidhuber is famous for connecting modern ML research back to old ideas, feel free to consider the same approach in some cases too.
+   - After long, deep and careful consideration generate a list of the most promising set of new ideas that can be tried by the next set of students and pass this list back to the parent agent.
+  </research-sub-agent-instructions>
+   
+   - Once the sub-agent has returned a set of hypothesis, they have to be assigned to the idle students
+   - For each idle student, assign it a hypothesis - create a branch and draft PR for each student-hypothesis pair:
+      ```bash
+      git checkout main && git pull
+      git checkout -b exp/<hypothesis-name>
+      git push -u origin exp/<hypothesis-name>
+      gh pr create --draft \
+        --title "<hypothesis>" \
+        --body "<PR body template — see below>" \
+        --label "senpai" --label "student:<name>" --label "status:wip" \
+        --base main --head exp/<hypothesis-name>
+      ```
+   - If there are more hypothesis than idle students, pick your favorite hypotheses to assign until there are no more idle students to assign to. 
 
 4. **Wait 5 minutes**, then go back to step 1.
 
 ## PR body template
 
-Every PR you create must follow this structure:
+Every PR you create must follow this structure for the body:
 
 ```markdown
 ## Hypothesis
@@ -83,7 +97,7 @@ Every PR you create must follow this structure:
 _To be filled by student_
 ```
 
-Be specific in Instructions. "Try a higher learning rate" is vague. "Change lr from 5e-4 to 1e-3 and add cosine annealing with T_max=epochs" is actionable.
+Be specific in your Instructions to the Student. "Try a higher learning rate" is vague. "Change lr from 5e-4 to 1e-3 and add cosine annealing with T_max=epochs" is actionable.
 
 ## Decision criteria
 

@@ -23,6 +23,7 @@ if [ ! -d "$WORKDIR/.git" ]; then
     git clone --branch "$REPO_BRANCH" "$REPO_URL" "$WORKDIR"
 fi
 cd "$WORKDIR"
+rm -rf .claude/skills/list-experiments
 uv pip install --system -e .
 
 # --- Git identity for commits ---
