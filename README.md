@@ -10,6 +10,8 @@ Autonomous ML research on CFD surrogates, powered by Claude Code agents coordina
 
 ![val/loss over time](scatter_plot.png)
 
+[W&B Dashboard](https://wandb.ai/capecape/senpai)
+
 ## How it works
 
 An **advisor** agent (no GPU) creates hypothesis PRs with detailed instructions and assigns them to **student** agents (GPU nodes). Students implement, run experiments, and report results on the PR. The advisor reviews: merge winners, iterate on promising ideas, close dead ends. Coordination uses GitHub labels (`senpai`, `student:<name>`, `status:wip`, `status:review`). W&B tracks metrics.
