@@ -6,17 +6,15 @@ SPDX-PackageName: senpai
 
 # senpai
 
-Autonomous neural network research on CFD surrogates, powered by Claude Code agents coordinated through GitHub PRs.
+Autonomous ML research on CFD surrogates, powered by Claude Code agents coordinated through GitHub PRs.
 
 ![val/loss over time](scatter_plot.png)
 
-## The idea
+## How it works
 
-We want to run autonomous ML research at scale: many hypotheses explored in parallel by AI agents, with all coordination happening through GitHub. No custom dashboards, no message queues — just PRs, labels, and code review.
+An **advisor** agent (no GPU) creates hypothesis PRs with detailed instructions and assigns them to **student** agents (GPU nodes). Students implement, run experiments, and report results on the PR. The advisor reviews: merge winners, iterate on promising ideas, close dead ends. Coordination uses GitHub labels (`senpai`, `student:<name>`, `status:wip`, `status:review`). W&B tracks metrics.
 
-An **advisor** agent (no GPU) acts as the research lead. It decides what to try, creates a GitHub PR for each hypothesis with detailed instructions, and assigns it to a **student** agent. Each student (full GPU node) picks up its assigned PR, implements the hypothesis, runs experiments, and reports results back on the PR. The advisor reviews: merge the winners into main, send promising ideas back for iteration, close dead ends.
-
-GitHub is the single source of truth. Every hypothesis, every result, every decision is a PR. W&B tracks the experiment metrics.
+See `advisor.md`, `student.md`, and `program.md` for the full protocols.
 
 ## Architecture
 
@@ -37,10 +35,6 @@ GitHub is the single source of truth. Every hypothesis, every result, every deci
 │  │  ┌──────────┐  ┌──────────┐  ┌──────────┐                 │   │
 │  │  │ frieren  │  │   fern   │  │ tanjiro  │  ...             │   │
 │  │  │ 8x GPU   │  │ 8x GPU   │  │ 8x GPU   │                │   │
-│  │  │          │  │          │  │          │                 │   │
-│  │  │ Polls PR │  │ Polls PR │  │ Polls PR │                 │   │
-│  │  │ Implements│  │ Implements│  │ Implements│                │   │
-│  │  │ Reports  │  │ Reports  │  │ Reports  │                 │   │
 │  │  └──────────┘  └──────────┘  └──────────┘                 │   │
 │  └────────────────────────────────────────────────────────────┘   │
 │                                                                   │
@@ -48,36 +42,10 @@ GitHub is the single source of truth. Every hypothesis, every result, every deci
          │                              │
 ┌────────▼─────────┐          ┌─────────▼─────────┐
 │     GitHub        │          │   Weights &        │
-│                   │          │   Biases            │
-│  PRs = hypotheses │          │                    │
-│  Labels = routing │          │  Metrics, runs,    │
-│  Reviews = coord  │          │  tags, groups      │
+│  PRs = hypotheses │          │   Biases            │
+│  Labels = routing │          │  Metrics, runs     │
 └───────────────────┘          └────────────────────┘
 ```
-
-### Advisor
-
-A lightweight pod (no GPU) running Claude Code. It does **not** write code or run experiments. Its job:
-
-1. **Survey** — query W&B for current best metrics, list open PRs
-2. **Review** — check PRs labeled `status:review`. Merge winners (squash), request changes on promising ideas, close dead ends
-3. **Create hypotheses** — for each idle student, create a draft PR on an `exp/<name>` branch with a hypothesis, concrete instructions, and baseline metrics
-4. **Repeat** every 5 minutes
-
-See `advisor.md` for the full protocol.
-
-### Students
-
-Long-running K8s Deployments (one per GPU node) running Claude Code. Each student does **not** freelance — it only works on assigned PRs. Its job:
-
-1. **Poll** — check for PRs labeled `student:<name>` + `status:wip`
-2. **Implement** — check out the branch, follow the PR instructions, modify only `train.py` / `transolver.py`
-3. **Experiment** — run training, collect metrics
-4. **Report** — update the PR body with results, analysis, and suggested follow-ups
-5. **Submit** — push, mark PR ready for review, swap label to `status:review`
-6. **Wait** for the next assignment
-
-See `student.md` for the full protocol.
 
 ### PR lifecycle
 
@@ -97,91 +65,20 @@ Advisor reviews:
   └── Close ──→ dead end, branch deleted
 ```
 
-### Coordination via labels
-
-| Label | Meaning |
-|-------|---------|
-| `senpai` | All senpai PRs |
-| `student:<name>` | Assigned to this student |
-| `status:wip` | Student is working on it |
-| `status:review` | Ready for advisor review |
-
-### Key files
+## Key files
 
 | File | Purpose |
 |------|---------|
-| `program.md` | Shared context: problem, constraints, metrics, training output |
-| `advisor.md` | Advisor workflow: create hypotheses, review results, merge/close |
-| `student.md` | Student workflow: poll PRs, implement, experiment, report |
-| `train.py` | Training script (modifiable by students) |
-| `transolver.py` | Model architecture (modifiable by students) |
-| `prepare.py` | Data loading (read-only) |
-
-### Claude Code skills
-
-Skills are bundled in `.claude/skills/` and give agents reusable capabilities.
-
-| Skill | Used by | Purpose |
-|-------|---------|---------|
-| `wandb-primary` | Advisor, Students | Query W&B runs, metrics, and experiment history using the W&B SDK |
-| `list-experiments` | Advisor only | Download all experiment PRs as markdown files for analysis. Used by the advisor's Opus sub-agent when generating new hypotheses. Stripped from student containers at boot (`rm -rf .claude/skills/list-experiments` in `entrypoint-student.sh`) |
-
-## Quick start
-
-### 1. Create the K8s secret
-
-```bash
-kubectl create secret generic senpai-secrets \
-  --from-literal=wandb-api-key=$WANDB_API_KEY \
-  --from-literal=anthropic-api-key=$ANTHROPIC_API_KEY \
-  --from-literal=github-token=$GITHUB_TOKEN
-```
-
-### 2. Set up RBAC (for advisor pod)
-
-```bash
-kubectl apply -f k8s/orchestrator-rbac.yaml
-```
-
-### 3. Create GitHub labels
-
-Create these labels on the repo: `senpai`, `status:wip`, `status:review`, and one `student:<name>` per student (e.g. `student:frieren`).
-
-### 4. Launch
-
-```bash
-# Launch advisor + 3 students
-python k8s/launch.py --tag mar13 --names "frieren,fern,tanjiro" \
-  --wandb_entity capecape --repo_branch main
-
-# Students only (no advisor)
-python k8s/launch.py --tag mar13 --n_students 4 --students_only \
-  --wandb_entity capecape
-
-# Dry run to preview manifests
-python k8s/launch.py --tag mar13 --names "frieren" --dry_run
-```
-
-### 5. Monitor
-
-```bash
-# Check running deployments
-kubectl get deployments -l app=senpai
-
-# Watch a student's logs
-kubectl logs -f deployment/senpai-frieren
-
-# Check PRs
-gh pr list --label "senpai"
-
-# Stop everything
-kubectl delete deployments -l research-tag=mar13
-```
+| `program.md` | Shared context: problem, constraints, metrics |
+| `advisor.md` | Advisor protocol: hypotheses, review, merge/close |
+| `student.md` | Student protocol: poll, implement, experiment, report |
+| `train.py` / `transolver.py` | Training script and model (modifiable by students) |
+| `.claude/skills/wandb-primary/` | W&B query skill (advisor + students) |
+| `.claude/skills/list-experiments/` | Experiment log skill (advisor only, stripped from students) |
 
 ## References
 
-`TandemFoilSet: Datasets for Flow Field Prediction of Tandem-Airfoil Through the Reuse of Single Airfoils`
-is distributed by CC-BY-4.0.
+`TandemFoilSet: Datasets for Flow Field Prediction of Tandem-Airfoil Through the Reuse of Single Airfoils` is distributed by CC-BY-4.0.
 ```bibtex
 @inproceedings{
 lim2026tandemfoilset,
