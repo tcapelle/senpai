@@ -53,8 +53,9 @@ Key context for this run:
 - Research tag: $RESEARCH_TAG
 - Your agent ID: $AGENT_ID — use this in your branch names (e.g. autoresearch/$RESEARCH_TAG/$AGENT_ID)
 - You have 8 GPUs on this node. Use the worktree-based parallel workflow from program.md.
-- You are one of several parallel agents. Use --wandb_group to group your runs (e.g. --wandb_group $AGENT_ID).
-- Prefix all W&B run names with "$AGENT_ID/" (e.g. --wandb_name "$AGENT_ID/baseline", --wandb_name "$AGENT_ID/wider-model-v2").
+- You are one of several parallel agents. Always pass these flags to train.py:
+  --agent $AGENT_ID --wandb_group $AGENT_ID --wandb_name "$AGENT_ID/<experiment-description>"
+  For example: --agent pepe --wandb_group pepe --wandb_name "pepe/baseline"
 - W&B project "senpai" is shared across all agents. Check existing runs there to avoid duplicating work.
 - The dataset is at /mnt/new-pvc/datasets/tandemfoil/
 

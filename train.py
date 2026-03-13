@@ -31,6 +31,7 @@ class Config:
     dataset: str = "raceCar_single_randomFields"
     wandb_group: str | None = None  # group related runs (e.g. iterations on the same idea)
     wandb_name: str | None = None  # name for this specific run
+    agent: str | None = None  # agent name (e.g. pepe) for filtering in W&B
     debug: bool = False
 
 
