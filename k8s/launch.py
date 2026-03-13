@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 
-"""Launch N autonomous senpai research agents as K8s Jobs."""
+"""Launch senpai advisor and student agents as K8s resources."""
 
 import subprocess
 import sys
@@ -13,9 +13,10 @@ from pathlib import Path
 
 import simple_parsing as sp
 
-TEMPLATE = Path(__file__).parent / "agent-job.yaml"
+STUDENT_TEMPLATE = Path(__file__).parent / "student-deployment.yaml"
+ADVISOR_TEMPLATE = Path(__file__).parent / "advisor-pod.yaml"
 
-AGENT_NAMES = [
+STUDENT_NAMES = [
     "frieren", "fern", "tanjiro", "nezuko", "alphonse", "edward",
     "thorfinn", "askeladd", "violet", "gilbert", "senku", "kohaku",
     "emma", "norman", "chihiro", "haku", "shoya", "shouko",
@@ -25,28 +26,25 @@ AGENT_NAMES = [
 
 @dataclass
 class Args:
-    """Launch autonomous research agents on Kubernetes."""
+    """Launch senpai advisor and/or student agents on Kubernetes."""
     tag: str  # research tag (e.g. mar13)
-    names: str = ""  # comma-separated agent names to launch (e.g. "agata,claudio")
-    n_agents: int = 4  # number of agents to launch (ignored if --names is provided)
+    names: str = ""  # comma-separated student names (e.g. "frieren,fern")
+    n_students: int = 4  # number of students to launch (ignored if --names is provided)
     repo_url: str = "https://github.com/wandb/senpai.git"  # git repo URL
     repo_branch: str = "main"  # git branch to clone
-    image: str = "ghcr.io/tcapelle/senpai-agent:latest"  # container image
+    image: str = "ghcr.io/tcapelle/senpai-agent:latest"  # container image for students
     wandb_entity: str = ""  # W&B entity (team or username)
+    advisor: bool = False  # also deploy the advisor pod
+    students_only: bool = False  # only deploy students, skip advisor
     dry_run: bool = False  # print manifests without applying
 
 
-def render_job(template: str, agent_name: str, tag: str, args: Args) -> str:
-    """Replace {{PLACEHOLDER}} tokens in the job template."""
-    replacements = {
-        "AGENT_NAME": agent_name,
-        "RESEARCH_TAG": tag,
-        "WANDB_ENTITY": args.wandb_entity,
-    }
+def render_student(template: str, student_name: str, tag: str, args: Args) -> str:
+    """Replace {{PLACEHOLDER}} tokens in the student job template."""
     out = template
-    for key, value in replacements.items():
-        out = out.replace(f"{{{{{key}}}}}", value)
-    # These aren't wrapped in {{ }} — match on exact values
+    out = out.replace("{{STUDENT_NAME}}", student_name)
+    out = out.replace("{{RESEARCH_TAG}}", tag)
+    out = out.replace("{{WANDB_ENTITY}}", args.wandb_entity)
     out = out.replace(
         'value: "https://github.com/wandb/senpai.git"',
         f'value: "{args.repo_url}"',
@@ -62,42 +60,83 @@ def render_job(template: str, agent_name: str, tag: str, args: Args) -> str:
     return out
 
 
+def render_advisor(template: str, tag: str, student_list: list[str], args: Args) -> str:
+    """Replace {{PLACEHOLDER}} tokens in the advisor pod template."""
+    out = template
+    out = out.replace("{{RESEARCH_TAG}}", tag)
+    out = out.replace("{{STUDENT_NAMES}}", ",".join(student_list))
+    out = out.replace(
+        'value: "https://github.com/wandb/senpai.git"',
+        f'value: "{args.repo_url}"',
+    )
+    out = out.replace(
+        'value: "main"',
+        f'value: "{args.repo_branch}"',
+    )
+    return out
+
+
+def kubectl_apply(manifest: str, name: str):
+    """Apply a manifest via kubectl."""
+    print(f"Launching: {name}")
+    result = subprocess.run(
+        ["kubectl", "apply", "-f", "-"],
+        input=manifest,
+        text=True,
+        capture_output=True,
+    )
+    if result.returncode != 0:
+        print(f"  ERROR: {result.stderr.strip()}", file=sys.stderr)
+    else:
+        print(f"  {result.stdout.strip()}")
+
+
 def main():
     args = sp.parse(Args)
-    template = TEMPLATE.read_text()
 
+    # Resolve student list
     if args.names:
-        agent_list = [n.strip() for n in args.names.split(",")]
+        student_list = [n.strip() for n in args.names.split(",")]
     else:
-        if args.n_agents > len(AGENT_NAMES):
-            print(f"ERROR: max {len(AGENT_NAMES)} agents (got {args.n_agents})", file=sys.stderr)
+        if args.n_students > len(STUDENT_NAMES):
+            print(f"ERROR: max {len(STUDENT_NAMES)} students (got {args.n_students})", file=sys.stderr)
             sys.exit(1)
-        agent_list = AGENT_NAMES[:args.n_agents]
-    for agent_name in agent_list:
-        manifest = render_job(template, agent_name, args.tag, args)
+        student_list = STUDENT_NAMES[:args.n_students]
 
+    student_template = STUDENT_TEMPLATE.read_text()
+    advisor_template = ADVISOR_TEMPLATE.read_text()
+
+    # --- Deploy students ---
+    for name in student_list:
+        manifest = render_student(student_template, name, args.tag, args)
         if args.dry_run:
-            print(f"--- Agent: {agent_name} ---")
+            print(f"--- Student: {name} ---")
             print(manifest)
             print()
         else:
-            print(f"Launching agent: {agent_name}")
-            result = subprocess.run(
-                ["kubectl", "apply", "-f", "-"],
-                input=manifest,
-                text=True,
-                capture_output=True,
-            )
-            if result.returncode != 0:
-                print(f"  ERROR: {result.stderr.strip()}", file=sys.stderr)
-            else:
-                print(f"  {result.stdout.strip()}")
+            kubectl_apply(manifest, f"student {name}")
+
+    # --- Deploy advisor ---
+    if args.advisor or not args.students_only:
+        manifest = render_advisor(advisor_template, args.tag, student_list, args)
+        if args.dry_run:
+            print("--- Advisor ---")
+            print(manifest)
+            print()
+        else:
+            kubectl_apply(manifest, "advisor")
 
     if not args.dry_run:
-        print(f"\nLaunched {len(agent_list)} agents: {', '.join(agent_list)}")
-        print(f"Monitor: kubectl get jobs -l research-tag={args.tag}")
-        print(f"Logs:    kubectl logs -f job/senpai-{agent_list[0]}")
-        print(f"Stop:    kubectl delete jobs -l research-tag={args.tag}")
+        print(f"\nLaunched {len(student_list)} students: {', '.join(student_list)}")
+        if args.advisor or not args.students_only:
+            print("Launched advisor pod")
+        print(f"\nMonitor:")
+        print(f"  kubectl get deployments -l research-tag={args.tag}")
+        print(f"  kubectl get pod senpai-advisor")
+        print(f"  kubectl logs -f deployment/senpai-{student_list[0]}")
+        print(f"\nStop:")
+        print(f"  kubectl delete deployments -l research-tag={args.tag}")
+        print(f"  kubectl delete pod senpai-advisor")
 
 
 if __name__ == "__main__":
