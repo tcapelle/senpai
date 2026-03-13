@@ -29,6 +29,7 @@ spec:
         args:
         - |
           set -e
+          git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
           git clone --branch "$SENPAI_REPO_BRANCH" "$SENPAI_REPO_URL" /workspace/senpai
           cd /workspace/senpai
           bash k8s/entrypoint.sh
@@ -51,6 +52,11 @@ spec:
             secretKeyRef:
               name: senpai-secrets
               key: anthropic-api-key
+        - name: GITHUB_TOKEN
+          valueFrom:
+            secretKeyRef:
+              name: senpai-secrets
+              key: github-token
         - name: WANDB_ENTITY
           value: "{{WANDB_ENTITY}}"
         - name: WANDB_PROJECT
