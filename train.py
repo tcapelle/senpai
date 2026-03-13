@@ -29,6 +29,8 @@ class Config:
     batch_size: int = 4
     surf_weight: float = 10.0
     dataset: str = "raceCar_single_randomFields"
+    wandb_group: str | None = None  # group related runs (e.g. iterations on the same idea)
+    wandb_name: str | None = None  # name for this specific run
     debug: bool = False
 
 
@@ -83,6 +85,8 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=MAX_EPOC
 # --- wandb ---
 run = wandb.init(
     project="senpai",
+    group=cfg.wandb_group,
+    name=cfg.wandb_name,
     config={**asdict(cfg), "model_config": model_config, "n_params": n_params, "train_samples": len(train_ds), "val_samples": len(val_ds)},
     mode="offline" if cfg.debug else "online",
 )

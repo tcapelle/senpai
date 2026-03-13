@@ -21,20 +21,21 @@ Key files:
 
 ## Setup
 
-To set up a new experiment, work with the user to:
+To set up a new research session, work with the user to:
 
 1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar12`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
-2. **Create the branch**: `git checkout -b autoresearch/<tag>` from current main.
+2. **Create the base branch**: `git checkout -b autoresearch/<tag>` from current main. This branch represents the "current best" — experiments that improve on it get merged back in.
 3. **Read the in-scope files**: Read these files for full context:
    - `prepare.py` — fixed data prep, dataset class, collation.
    - `train.py` — training script with Config dataclass. This is where you tune.
    - `transolver.py` — model architecture. This is where you experiment with the model.
    - `DATASET_REPORT.md` — dataset schema, value ranges, overset mesh structure.
 4. **Verify data exists**: Check that `/mnt/new-pvc/datasets/tandemfoil/raceCar_single_randomFields.pickle` exists.
-5. **Initialize results.tsv**: Create `results.tsv` with just the header row. The baseline will be recorded after the first run.
-6. **Confirm and go**: Confirm setup looks good.
+5. **Initialize results.tsv**: Create `results.tsv` with just the header row in the main worktree. This file stays untracked by git.
+6. **Run baseline**: Run `train.py` as-is on GPU 0 to establish baseline metrics. Record in `results.tsv`.
+7. **Confirm and go**: Confirm setup looks good, then begin parallel experimentation.
 
-Once you get confirmation, kick off the experimentation.
+Once you get confirmation, kick off the experimentation using the worktree-based parallel workflow described below.
 
 ## Experimentation
 
@@ -110,23 +111,90 @@ c3d4e5f	18.5000	1.45	95.0	54.0	discard	switch to L1 loss
 d4e5f6g	0.0	0.0	0.0	0.0	crash	double model width (OOM)
 ```
 
-## The experiment loop
+## GPU pool and worktrees
 
-The experiment runs on a dedicated branch (e.g. `autoresearch/mar12`).
+You have **8 GPUs** (indices 0–7). Each GPU can run one experiment at a time. GPUs are a shared pool — allocate them flexibly based on what ideas need exploration.
+
+Each experiment runs in its own **git worktree**, which gives it an isolated copy of the repo. This means multiple experiments can modify `train.py` and `transolver.py` simultaneously without conflicts.
+
+### Worktree lifecycle
+
+```bash
+# Create a worktree for an idea (branch from wherever makes sense)
+git worktree add ../senpai-<name> -b exp/<name>
+
+# Run an experiment in that worktree on a specific GPU
+cd ../senpai-<name>
+CUDA_VISIBLE_DEVICES=<gpu_id> python train.py > run.log 2>&1 &
+
+# When done, collect results, then clean up losers
+git worktree remove ../senpai-<name>  # also deletes the branch if merged
+```
+
+### Branching strategy
+
+Branch from wherever your idea needs:
+- **New idea from scratch**: branch from `autoresearch/<tag>` (the current best)
+- **Iterating on an idea**: keep working in the same worktree, committing as you go
+- **Variant of a previous experiment**: branch from that experiment's branch
+
+An idea might take 1 run or 5 iterative runs. The worktree persists as long as the idea is being explored. You can dedicate 4 GPUs to deeply exploring one architectural idea while running 4 independent smaller experiments on the others.
+
+### Promoting a winner
+
+When an experiment produces better results than the current best:
+1. Merge its branch into `autoresearch/<tag>`: `git checkout autoresearch/<tag> && git merge exp/<name>`
+2. This advances the baseline. Future experiments can branch from this new state.
+3. Clean up the worktree.
+
+When an experiment doesn't improve, just delete the worktree and branch.
+
+## The experiment loop
 
 LOOP FOREVER:
 
-1. Look at the git state: the current branch/commit we're on
-2. Formulate a hypothesis and modify `train.py` and/or `transolver.py`
-3. git commit
-4. Run the experiment: `python train.py > run.log 2>&1` (redirect everything — do NOT use tee or let output flood your context)
-5. Read out the results: `grep "Val total loss\|Volume  MAE\|Surface MAE" run.log`
-6. If the grep output is empty, the run crashed. Run `tail -n 50 run.log` to read the Python stack trace and attempt a fix. If you can't get things to work after more than a few attempts, give up.
-7. Record the results in the tsv (NOTE: do not commit the results.tsv file, leave it untracked by git)
-8. If metrics improved (lower surface MAE / val_loss), you "advance" the branch, keeping the git commit
-9. If metrics are equal or worse, you git reset back to where you started
+1. **Survey the state**: Check which GPUs are free, review `results.tsv` for the current best, look at what's running
+2. **Plan**: Decide how to allocate free GPUs. Consider:
+   - Is there an active idea that needs more iterations? Give it another GPU run.
+   - Are there new ideas worth exploring? Spin up new worktrees.
+   - Can you run independent ideas in parallel on available GPUs?
+3. **For each experiment**:
+   a. Create a worktree (or reuse an existing one for iterations on the same idea)
+   b. Modify `train.py` and/or `transolver.py` in that worktree
+   c. Git commit in the worktree
+   d. Run: `cd ../senpai-<name> && CUDA_VISIBLE_DEVICES=<gpu_id> python train.py --wandb_group <idea-name> --wandb_name <run-description> > run.log 2>&1 &`
+   e. Track which GPU is running what
+4. **Collect results** as experiments finish:
+   a. `grep "Val total loss\|Volume  MAE\|Surface MAE" ../senpai-<name>/run.log`
+   b. If grep is empty, the run crashed — `tail -n 50 ../senpai-<name>/run.log` for the traceback
+   c. Record in `results.tsv` (in the main worktree — this file stays untracked)
+   d. Decide: keep (merge) or discard (delete worktree)
+5. **Iterate**: Use results to inform the next batch of experiments. Combine near-misses, go deeper on promising directions, abandon dead ends.
 
-The idea is that you are a completely autonomous researcher trying things out. If they work, keep. If they don't, discard. And you're advancing the branch so that you can iterate.
+### Exploring ideas in depth
+
+Some ideas need multiple iterations before they show results. For example, a new attention mechanism might need:
+- Run 1: basic implementation (might crash or perform poorly)
+- Run 2: fix bugs, tune hyperparams for the new mechanism
+- Run 3: combine with the best loss formulation
+- Run 4: final tuning
+
+This is fine. Keep the worktree alive, keep iterating on the same branch. Use as many GPUs as the idea deserves. Not every GPU needs to explore a different idea.
+
+Use `--wandb_group` to tie related runs together. All iterations on the same idea should share a group name (e.g. `--wandb_group multi-scale-attn`). Use `--wandb_name` to label each individual run (e.g. `--wandb_name "v1-basic"`, `--wandb_name "v2-fix-norm"`). This makes it easy to compare iterations in the W&B UI.
+
+### Managing GPU allocation
+
+Keep a mental model of GPU allocation:
+```
+GPU 0: exp/multi-scale-attention (running, started 2min ago)
+GPU 1: exp/channel-weighted-loss (running, started 4min ago)
+GPU 2: free
+GPU 3: exp/larger-model-v2 (running, iteration 3)
+...
+```
+
+Check if a GPU is free: `nvidia-smi --query-gpu=utilization.gpu --format=csv,noheader` or check if the background process finished.
 
 **Ideas to explore** (non-exhaustive):
 - Loss formulation: surface weight, per-channel weighting, L1 vs MSE, gradient-based losses
@@ -139,8 +207,8 @@ The idea is that you are a completely autonomous researcher trying things out. I
 - Optimizer: AdamW vs Adam, weight decay, gradient clipping
 - Multi-scale or hierarchical approaches
 
-**Timeout**: Default is 10 epochs / 5 minutes. Don't change this, it's your budget. You have 8 GPUs, so you can run this workflow up to 8 time sin parallel.
+**Timeout**: Default is 10 epochs / 5 minutes. Don't change this, it's your budget.
 
-**Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run. If the idea itself is fundamentally broken, just skip it, log "crash" as the status in the tsv, and move on.
+**Crashes**: If a run crashes (OOM, or a bug, or etc.), use your judgment: If it's something dumb and easy to fix (e.g. a typo, a missing import), fix it and re-run in the same worktree. If the idea itself is fundamentally broken, log "crash" in the tsv, delete the worktree, and move on.
 
 **NEVER STOP**: Once the experiment loop has begun (after the initial setup), do NOT pause to ask the human if you should continue. Do NOT ask "should I keep going?" or "is this a good stopping point?". The human might be asleep, or gone from a computer and expects you to continue working *indefinitely* until you are manually stopped. You are autonomous. If you run out of ideas, think harder — read the dataset report for new angles, try combining previous near-misses, try more radical architectural changes. The loop runs until the human interrupts you, period.
