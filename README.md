@@ -115,6 +115,15 @@ Advisor reviews:
 | `transolver.py` | Model architecture (modifiable by students) |
 | `prepare.py` | Data loading (read-only) |
 
+### Claude Code skills
+
+Skills are bundled in `.claude/skills/` and give agents reusable capabilities.
+
+| Skill | Used by | Purpose |
+|-------|---------|---------|
+| `wandb-primary` | Advisor, Students | Query W&B runs, metrics, and experiment history using the W&B SDK |
+| `list-experiments` | Advisor only | Download all experiment PRs as markdown files for analysis. Used by the advisor's Opus sub-agent when generating new hypotheses. Stripped from student containers at boot (`rm -rf .claude/skills/list-experiments` in `entrypoint-student.sh`) |
+
 ## Quick start
 
 ### 1. Create the K8s secret
@@ -154,9 +163,8 @@ python k8s/launch.py --tag mar13 --names "frieren" --dry_run
 ### 5. Monitor
 
 ```bash
-# Check running pods
+# Check running deployments
 kubectl get deployments -l app=senpai
-kubectl get pod senpai-advisor
 
 # Watch a student's logs
 kubectl logs -f deployment/senpai-frieren
@@ -166,17 +174,6 @@ gh pr list --label "senpai"
 
 # Stop everything
 kubectl delete deployments -l research-tag=mar13
-kubectl delete pod senpai-advisor
-```
-
-## Dev Environment: Devpod
-
-The devpod has global python installed, so you can directly run scripts with `python my_script.py`.
-
-```bash
-devpod up . --id senpai
-devpod stop senpai     # stop (keeps data)
-devpod delete senpai   # delete everything
 ```
 
 ## References

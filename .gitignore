@@ -48,3 +48,4 @@ k8s/secrets.yaml
 # Experiment logs
 run*.log
 results.tsv
+experiment_log/

@@ -4,6 +4,7 @@
 
 """Train Transolver on full-field airfoil flow prediction with separate surface/volume losses."""
 
+import os
 import time
 import torch
 import wandb
@@ -84,7 +85,7 @@ scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=MAX_EPOC
 
 # --- wandb ---
 run = wandb.init(
-    project="senpai",
+    project=os.environ.get("WANDB_PROJECT", "senpai"),
     group=cfg.wandb_group,
     name=cfg.wandb_name,
     tags=[cfg.agent] if cfg.agent else [],

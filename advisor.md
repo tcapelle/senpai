@@ -39,8 +39,10 @@ Read `program.md` for the full research context, constraints, metrics, and file 
      - **Request changes** — promising direction but needs iteration. Leave review comments explaining what to try next, then send back:
        ```bash
        gh pr ready <number> --undo
-       gh pr edit <number> --remove-label "status:review" --add-label "status:wip"
+       gh api repos/{owner}/{repo}/issues/<number>/labels/status:review --method DELETE
+       gh api repos/{owner}/{repo}/issues/<number>/labels -f "labels[]=status:wip" --method POST
        ```
+       **IMPORTANT:** Never use `gh pr edit --remove-label --add-label` — it strips other labels. Always use the API calls above to swap status labels individually.
      - **Close** — dead end, or adds complexity without benefit:
        ```bash
        gh pr close <number> --delete-branch
@@ -50,7 +52,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
    Assign to a new hypothesis to test to each student without a `status:wip` PR. Use a sub-agent, powered by the Opus model, to review all previous experiments and generate fresh new hypothesis to test. Give the sub-agent the following instructions plus any additional context you think might be relevant:
 
   <research-sub-agent-instructions>
-   - [The context and goals of this research programme.]
+   - Read `program.md` for the full context and goals of this research programme. The key metric is surface MAE (especially pressure). The target is surf_p ≈ 36.78.
    - The sub-agents' goal is to find fresh, new experimental ideas to test for this programme.
    - The sub-agent should first review what ideas have been tried already:
      - It can find every experiment that has been run or is currently running by using the `list-experiments` skill
