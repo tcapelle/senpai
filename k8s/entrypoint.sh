@@ -68,21 +68,20 @@ EOF
 )"
 
 # Ralph loop: same prompt fed repeatedly. Claude sees its own previous
-# work in files, git, journal. If it exits (context limit, error, etc.),
-# we restart with --continue so it picks up the conversation, then fall
-# back to a fresh prompt if --continue fails.
+# work in files, git, and the research journal. If it exits (context
+# limit, error, etc.), we restart. --continue resumes the most recent
+# conversation so Claude has history; falls back to fresh prompt.
 ITERATION=0
 while true; do
     ITERATION=$((ITERATION + 1))
     echo "=== Ralph Loop iteration $ITERATION ($(date)) ==="
 
     if [ "$ITERATION" -eq 1 ]; then
-        # First run: fresh prompt
-        echo "$PROMPT" | claude -p --dangerously-skip-permissions || true
+        claude -p "$PROMPT" --dangerously-skip-permissions || true
     else
-        # Subsequent runs: try to continue the conversation, fall back to fresh
-        echo "$PROMPT" | claude -p --continue --dangerously-skip-permissions || \
-        echo "$PROMPT" | claude -p --dangerously-skip-permissions || true
+        # Try continuing the previous conversation first
+        claude -c -p "$PROMPT" --dangerously-skip-permissions || \
+        claude -p "$PROMPT" --dangerously-skip-permissions || true
     fi
 
     echo "=== Claude exited at $(date), restarting in 5s ==="
