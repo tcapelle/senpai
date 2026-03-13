@@ -1,0 +1,73 @@
+# SPDX-FileCopyrightText: 2026 CoreWeave, Inc.
+# SPDX-License-Identifier: Apache-2.0
+# SPDX-PackageName: senpai
+#
+# The orchestrator: a lightweight pod (no GPU) that runs Claude Code
+# to manage the research fleet. It can launch/stop agent pods,
+# query W&B for results, and coordinate the research agenda.
+
+apiVersion: v1
+kind: Pod
+metadata:
+  name: senpai-orchestrator
+  labels:
+    app: senpai
+    role: orchestrator
+spec:
+  serviceAccountName: senpai-orchestrator
+  restartPolicy: Never
+  containers:
+  - name: orchestrator
+    image: ghcr.io/tcapelle/dev_box:latest
+    command: ["/bin/bash", "-c"]
+    args:
+    - |
+      set -e
+      # Install kubectl
+      curl -fsSL "https://dl.k8s.io/release/$(curl -fsSL https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" -o /usr/local/bin/kubectl
+      chmod +x /usr/local/bin/kubectl
+
+      git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
+      git clone --branch "$SENPAI_REPO_BRANCH" "$SENPAI_REPO_URL" /workspace/senpai
+      cd /workspace/senpai
+      bash k8s/entrypoint-orchestrator.sh
+    env:
+    - name: SENPAI_REPO_URL
+      value: "https://github.com/wandb/senpai.git"
+    - name: SENPAI_REPO_BRANCH
+      value: "k8s-service"
+    - name: SENPAI_RESEARCH_TAG
+      value: "mar13"
+    - name: WANDB_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: senpai-secrets
+          key: wandb-api-key
+    - name: ANTHROPIC_API_KEY
+      valueFrom:
+        secretKeyRef:
+          name: senpai-secrets
+          key: anthropic-api-key
+    - name: GITHUB_TOKEN
+      valueFrom:
+        secretKeyRef:
+          name: senpai-secrets
+          key: github-token
+    - name: WANDB_ENTITY
+      value: "capecape"
+    - name: WANDB_PROJECT
+      value: "senpai"
+    resources:
+      requests:
+        cpu: "4"
+        memory: "8Gi"
+      limits:
+        cpu: "8"
+        memory: "16Gi"
+    volumeMounts:
+    - name: dataset
+      mountPath: /mnt/new-pvc
+  volumes:
+  - name: dataset
+    persistentVolumeClaim:
+      claimName: new-pvc

@@ -60,6 +60,8 @@ Key context for this run:
   Or: --agent pepe --wandb_group "local-attention" --wandb_name "pepe/local-attention-v2"
 - W&B project "senpai" is shared across all agents. Check existing runs there to avoid duplicating work.
 - The dataset is at /mnt/new-pvc/datasets/tandemfoil/
+- Status files are at /mnt/new-pvc/senpai/status/<agent>.json — train.py writes these automatically when --agent is passed. You can read other agents' status files to see what they're working on and their current metrics.
+- Check /mnt/new-pvc/senpai/orchestrator/instructions.json for any directions from the orchestrator before starting a new experiment.
 
 Begin now.
 EOF
