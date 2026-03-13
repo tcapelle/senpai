@@ -4,9 +4,9 @@ SPDX-License-Identifier: Apache-2.0
 SPDX-PackageName: senpai
 -->
 
-# autoresearch
+# senpai
 
-This is an experiment to have the LLM do its own research on NN-CFD surrogates.
+This is an experiment to have the agent do its own research on NN-CFD surrogates.
 
 ## Context
 
@@ -23,8 +23,8 @@ Key files:
 
 To set up a new research session, work with the user to:
 
-1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar12`). The branch `autoresearch/<tag>` must not already exist — this is a fresh run.
-2. **Create the base branch**: `git checkout -b autoresearch/<tag>` from current main. This branch represents the "current best" — experiments that improve on it get merged back in.
+1. **Agree on a run tag**: propose a tag based on today's date (e.g. `mar12`). The branch `senpai/<tag>` must not already exist — this is a fresh run.
+2. **Create the base branch**: `git checkout -b senapai/<tag>` from current main. This branch represents the "current best" — experiments that improve on it get merged back in.
 3. **Read the in-scope files**: Read these files for full context:
    - `prepare.py` — fixed data prep, dataset class, collation.
    - `train.py` — training script with Config dataclass. This is where you tune.
@@ -134,7 +134,7 @@ git worktree remove ../senpai-<name>  # also deletes the branch if merged
 ### Branching strategy
 
 Branch from wherever your idea needs:
-- **New idea from scratch**: branch from `autoresearch/<tag>` (the current best)
+- **New idea from scratch**: branch from `senpai/<tag>` (the current best)
 - **Iterating on an idea**: keep working in the same worktree, committing as you go
 - **Variant of a previous experiment**: branch from that experiment's branch
 
@@ -143,7 +143,7 @@ An idea might take 1 run or 5 iterative runs. The worktree persists as long as t
 ### Promoting a winner
 
 When an experiment produces better results than the current best:
-1. Merge its branch into `autoresearch/<tag>`: `git checkout autoresearch/<tag> && git merge exp/<name>`
+1. Merge its branch into `senpai/<tag>`: `git checkout senpai/<tag> && git merge exp/<name>`
 2. This advances the baseline. Future experiments can branch from this new state.
 3. Clean up the worktree.
 
