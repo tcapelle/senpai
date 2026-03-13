@@ -24,7 +24,14 @@ spec:
       restartPolicy: Never
       containers:
       - name: agent
-        image: ghcr.io/tcapelle/senpai-agent:latest
+        image: ghcr.io/tcapelle/dev_box:latest
+        command: ["/bin/bash", "-c"]
+        args:
+        - |
+          set -e
+          git clone --branch "$SENPAI_REPO_BRANCH" "$SENPAI_REPO_URL" /workspace/senpai
+          cd /workspace/senpai
+          bash k8s/entrypoint.sh
         env:
         - name: SENPAI_REPO_URL
           value: "https://github.com/wandb/senpai.git"
