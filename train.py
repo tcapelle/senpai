@@ -88,6 +88,7 @@ run = wandb.init(
     project="senpai",
     group=cfg.wandb_group,
     name=cfg.wandb_name,
+    tags=[cfg.agent] if cfg.agent else [],
     config={**asdict(cfg), "model_config": model_config, "n_params": n_params, "train_samples": len(train_ds), "val_samples": len(val_ds)},
     mode="offline" if cfg.debug else "online",
 )
