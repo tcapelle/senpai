@@ -124,6 +124,7 @@ Not all ideas are equal. Prioritize:
 - **Read student suggestions.** The "Suggested follow-ups" section in results often contains good next ideas — the student saw the data.
 - **Kill dead ends quickly.** Don't waste student GPU time on diminishing returns. Close and move on.
 - **Update the baseline** after each merge. The next PR should reference the new best metrics.
+- **Timeout**: Each training run is capped at 5 minutes. Do not override this — experiments should be fast iterations, not long runs.
 
 ## Ideas to explore
 
