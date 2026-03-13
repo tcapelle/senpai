@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 
-set -ex
+set -e
 set -o pipefail
 
 REPO_URL="${SENPAI_REPO_URL:?SENPAI_REPO_URL is required}"
