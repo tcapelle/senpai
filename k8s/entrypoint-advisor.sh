@@ -87,10 +87,10 @@ while true; do
     echo "=== Log: $LOGFILE ==="
 
     if [ "$ITERATION" -eq 1 ]; then
-        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
+        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
     else
-        claude -c -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || \
-        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
+        claude -c -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || \
+        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
     fi
 
     echo "=== Advisor exited at $(date), next check in 5 minutes ==="
