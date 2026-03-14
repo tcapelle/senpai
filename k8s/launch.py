@@ -33,47 +33,44 @@ class Args:
     repo_url: str = "https://github.com/wandb/senpai.git"  # git repo URL
     repo_branch: str = "main"  # git branch to clone
     image: str = "ghcr.io/tcapelle/dev_box:latest"  # container image for students
-    wandb_entity: str = ""  # W&B entity (team or username)
+    wandb_entity: str = "capecape"  # W&B entity (team or username)
+    wandb_project: str = "senpai"  # W&B project name
+    advisor_branch: str = "jurgen"  # branch the advisor works on (PRs target this, not main)
     advisor: bool = False  # also deploy the advisor pod
     students_only: bool = False  # only deploy students, skip advisor
     dry_run: bool = False  # print manifests without applying
 
 
-def render_student(template: str, student_name: str, tag: str, args: Args) -> str:
-    """Replace {{PLACEHOLDER}} tokens in the student job template."""
+def render_template(template: str, replacements: dict[str, str]) -> str:
+    """Replace {{PLACEHOLDER}} tokens in a K8s manifest template."""
     out = template
-    out = out.replace("{{STUDENT_NAME}}", student_name)
-    out = out.replace("{{RESEARCH_TAG}}", tag)
-    out = out.replace("{{WANDB_ENTITY}}", args.wandb_entity)
-    out = out.replace(
-        'value: "https://github.com/wandb/senpai.git"',
-        f'value: "{args.repo_url}"',
-    )
-    out = out.replace(
-        'value: "main"',
-        f'value: "{args.repo_branch}"',
-    )
-    out = out.replace(
-        "image: ghcr.io/tcapelle/dev_box:latest",
-        f"image: {args.image}",
-    )
+    for key, value in replacements.items():
+        out = out.replace(f"{{{{{key}}}}}", value)
     return out
+
+
+def render_student(template: str, student_name: str, tag: str, args: Args) -> str:
+    return render_template(template, {
+        "STUDENT_NAME": student_name,
+        "RESEARCH_TAG": tag,
+        "WANDB_ENTITY": args.wandb_entity,
+        "WANDB_PROJECT": args.wandb_project,
+        "REPO_URL": args.repo_url,
+        "REPO_BRANCH": args.repo_branch,
+        "IMAGE": args.image,
+    })
 
 
 def render_advisor(template: str, tag: str, student_list: list[str], args: Args) -> str:
-    """Replace {{PLACEHOLDER}} tokens in the advisor pod template."""
-    out = template
-    out = out.replace("{{RESEARCH_TAG}}", tag)
-    out = out.replace("{{STUDENT_NAMES}}", ",".join(student_list))
-    out = out.replace(
-        'value: "https://github.com/wandb/senpai.git"',
-        f'value: "{args.repo_url}"',
-    )
-    out = out.replace(
-        'value: "main"',
-        f'value: "{args.repo_branch}"',
-    )
-    return out
+    return render_template(template, {
+        "RESEARCH_TAG": tag,
+        "STUDENT_NAMES": ",".join(student_list),
+        "WANDB_ENTITY": args.wandb_entity,
+        "WANDB_PROJECT": args.wandb_project,
+        "ADVISOR_BRANCH": args.advisor_branch,
+        "REPO_URL": args.repo_url,
+        "REPO_BRANCH": args.repo_branch,
+    })
 
 
 def kubectl_apply(manifest: str, name: str):

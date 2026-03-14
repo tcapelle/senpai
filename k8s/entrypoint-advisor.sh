@@ -11,6 +11,7 @@ REPO_URL="${SENPAI_REPO_URL:?SENPAI_REPO_URL is required}"
 REPO_BRANCH="${SENPAI_REPO_BRANCH:-main}"
 RESEARCH_TAG="${SENPAI_RESEARCH_TAG:?SENPAI_RESEARCH_TAG is required}"
 STUDENT_NAMES="${SENPAI_STUDENT_NAMES:?SENPAI_STUDENT_NAMES is required}"
+ADVISOR_BRANCH="${SENPAI_ADVISOR_BRANCH:-advisor}"
 
 WORKDIR="/workspace/senpai"
 
@@ -32,12 +33,12 @@ git config user.email "senpai-advisor@senpai"
 
 # --- Create or checkout advisor branch ---
 git fetch origin
-if git rev-parse --verify origin/advisor >/dev/null 2>&1; then
-    git checkout advisor
-    git pull origin advisor
+if git rev-parse --verify "origin/$ADVISOR_BRANCH" >/dev/null 2>&1; then
+    git checkout "$ADVISOR_BRANCH"
+    git pull origin "$ADVISOR_BRANCH"
 else
-    git checkout -b advisor
-    git push -u origin advisor
+    git checkout -b "$ADVISOR_BRANCH"
+    git push -u origin "$ADVISOR_BRANCH"
 fi
 
 # --- Install Claude Code ---
@@ -66,9 +67,9 @@ Read advisor.md for your full workflow, and program.md for the research context 
 
 Your students are: $STUDENT_NAMES
 Research tag: $RESEARCH_TAG
-W&B project: capecape/senpai_biz
+W&B project: ${WANDB_ENTITY}/${WANDB_PROJECT}
 
-IMPORTANT: You work on the 'advisor' branch, NOT main. All PRs target 'advisor' as base. When creating branches, checkout from 'advisor'. When merging, squash-merge into 'advisor'.
+IMPORTANT: You work on the '$ADVISOR_BRANCH' branch, NOT main. All PRs target '$ADVISOR_BRANCH' as base. When creating branches, checkout from '$ADVISOR_BRANCH'. When merging, squash-merge into '$ADVISOR_BRANCH'.
 
 You can also monitor student pods: kubectl get deployments -l app=senpai
 

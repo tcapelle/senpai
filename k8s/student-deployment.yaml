@@ -31,7 +31,7 @@ spec:
     spec:
       containers:
       - name: student
-        image: ghcr.io/tcapelle/dev_box:latest
+        image: {{IMAGE}}
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -42,9 +42,9 @@ spec:
           bash k8s/entrypoint-student.sh
         env:
         - name: SENPAI_REPO_URL
-          value: "https://github.com/wandb/senpai.git"
+          value: "{{REPO_URL}}"
         - name: SENPAI_REPO_BRANCH
-          value: "main"
+          value: "{{REPO_BRANCH}}"
         - name: SENPAI_STUDENT_NAME
           value: {{STUDENT_NAME}}
         - name: SENPAI_RESEARCH_TAG
@@ -67,7 +67,7 @@ spec:
         - name: WANDB_ENTITY
           value: "{{WANDB_ENTITY}}"
         - name: WANDB_PROJECT
-          value: "senpai_biz"
+          value: "{{WANDB_PROJECT}}"
         resources:
           requests:
             cpu: "120"
