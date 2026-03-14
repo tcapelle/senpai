@@ -142,7 +142,7 @@ for epoch in range(MAX_EPOCHS):
         y_norm = (y - stats["y_mean"]) / stats["y_std"]
 
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-            pred = model({"x": x, "is_surface": is_surface})["preds"]
+            pred = model({"x": x})["preds"]
             sq_err = (pred - y_norm) ** 2
 
             vol_mask = mask & ~is_surface
@@ -188,7 +188,7 @@ for epoch in range(MAX_EPOCHS):
             y_norm = (y - stats["y_mean"]) / stats["y_std"]
 
             with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-                pred = model({"x": x, "is_surface": is_surface})["preds"]
+                pred = model({"x": x})["preds"]
             sq_err = (pred.float() - y_norm) ** 2
 
             vol_mask = mask & ~is_surface
