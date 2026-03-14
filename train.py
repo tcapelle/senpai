@@ -14,6 +14,7 @@ from pathlib import Path
 from tqdm import tqdm
 from torch.utils.data import DataLoader, random_split, Subset
 import simple_parsing as sp
+from torch.optim.lr_scheduler import LinearLR, CosineAnnealingLR, SequentialLR
 
 from prepare import FullFieldDataset, pad_collate, DATA_ROOT
 from transolver import Transolver
@@ -21,11 +22,11 @@ from utils import visualize, dataset_stats
 
 
 MAX_TIMEOUT = 5.0 # minutes
-MAX_EPOCHS = 50
+MAX_EPOCHS = 70
 @dataclass
 class Config:
-    lr: float = 2e-3
-    weight_decay: float = 1e-4
+    lr: float = 0.006
+    weight_decay: float = 0.0
     batch_size: int = 4
     surf_weight: float = 10.0
     dataset: str = "raceCar_single_randomFields"
@@ -65,9 +66,9 @@ model_config = dict(
     fun_dim=16,
     out_dim=3,
     n_hidden=128,
-    n_layers=5,
-    n_head=4,
-    slice_num=64,
+    n_layers=1,
+    n_head=2,
+    slice_num=32,
     mlp_ratio=2,
     output_fields=["Ux", "Uy", "p"],
     output_dims=[1, 1, 1],
@@ -80,7 +81,9 @@ model = Transolver(
 
 n_params = sum(p.numel() for p in model.parameters())
 optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
-scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=10)
+warmup = LinearLR(optimizer, start_factor=1e-5/0.006, total_iters=5)
+cosine = CosineAnnealingLR(optimizer, T_max=65, eta_min=1e-4)
+scheduler = SequentialLR(optimizer, schedulers=[warmup, cosine], milestones=[5])
 
 
 # --- wandb ---
@@ -138,19 +141,22 @@ for epoch in range(MAX_EPOCHS):
         x = (x - stats["x_mean"]) / stats["x_std"]
         y_norm = (y - stats["y_mean"]) / stats["y_std"]
 
-        pred = model({"x": x, "is_surface": is_surface})["preds"]
-        sq_err = (pred - y_norm) ** 2
+        with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+            pred = model({"x": x, "is_surface": is_surface})["preds"]
+            sq_err = (pred - y_norm) ** 2
 
-        vol_mask = mask & ~is_surface
-        surf_mask = mask & is_surface
-        vol_loss = (sq_err * vol_mask.unsqueeze(-1)).sum() / vol_mask.sum().clamp(min=1)
-        channel_w = torch.tensor([1.0, 1.0, 1.5], device=device)
-        surf_loss = surface_loss_curriculum(pred, y_norm, surf_mask, channel_w, epoch, MAX_EPOCHS)
-        loss = vol_loss + cfg.surf_weight * surf_loss
+            vol_mask = mask & ~is_surface
+            surf_mask = mask & is_surface
+            vol_loss = (sq_err * vol_mask.unsqueeze(-1)).sum() / vol_mask.sum().clamp(min=1)
+            channel_w = torch.tensor([1.0, 1.0, 1.5], device=device)
+            abs_err = (pred - y_norm).abs()
+            surf_loss = (abs_err * surf_mask.unsqueeze(-1) * channel_w).sum() / surf_mask.sum().clamp(min=1)
+            loss = vol_loss + cfg.surf_weight * surf_loss
         wandb.log({"train/loss": loss.item()})
 
         optimizer.zero_grad()
         loss.backward()
+        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
 
         epoch_vol += vol_loss.item()
@@ -181,8 +187,9 @@ for epoch in range(MAX_EPOCHS):
             x = (x - stats["x_mean"]) / stats["x_std"]
             y_norm = (y - stats["y_mean"]) / stats["y_std"]
 
-            pred = model({"x": x, "is_surface": is_surface})["preds"]
-            sq_err = (pred - y_norm) ** 2
+            with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                pred = model({"x": x, "is_surface": is_surface})["preds"]
+            sq_err = (pred.float() - y_norm) ** 2
 
             vol_mask = mask & ~is_surface
             surf_mask = mask & is_surface
@@ -191,7 +198,7 @@ for epoch in range(MAX_EPOCHS):
             val_surf += (sq_err * surf_mask.unsqueeze(-1) * channel_w).sum().item() / surf_mask.sum().clamp(min=1).item()
             n_val += 1
 
-            pred_orig = pred * stats["y_std"] + stats["y_mean"]
+            pred_orig = pred.float() * stats["y_std"] + stats["y_mean"]
             err = (pred_orig - y).abs()
             mae_surf += (err * surf_mask.unsqueeze(-1)).sum(dim=(0, 1))
             mae_vol += (err * vol_mask.unsqueeze(-1)).sum(dim=(0, 1))
