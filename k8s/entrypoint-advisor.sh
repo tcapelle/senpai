@@ -76,16 +76,21 @@ Start by surveying the current state: check W&B metrics, list existing PRs, and 
 EOF
 )"
 
+LOGDIR="/workspace/senpai/advisor_logs"
+mkdir -p "$LOGDIR"
+
 ITERATION=0
 while true; do
     ITERATION=$((ITERATION + 1))
+    LOGFILE="$LOGDIR/iteration_${ITERATION}_$(date +%Y%m%d_%H%M%S).jsonl"
     echo "=== Advisor Loop iteration $ITERATION ($(date)) ==="
+    echo "=== Log: $LOGFILE ==="
 
     if [ "$ITERATION" -eq 1 ]; then
-        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --dangerously-skip-permissions || true
+        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
     else
-        claude -c -p "$PROMPT" --model "claude-opus-4-6[1m]" --dangerously-skip-permissions || \
-        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --dangerously-skip-permissions || true
+        claude -c -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || \
+        claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
     fi
 
     echo "=== Advisor exited at $(date), next check in 5 minutes ==="

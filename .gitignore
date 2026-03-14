@@ -49,3 +49,4 @@ k8s/secrets.yaml
 run*.log
 results.tsv
 experiment_log/
+advisor_logs/
