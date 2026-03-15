@@ -43,7 +43,7 @@ apt-get update && apt-get install -y gh gettext-base
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Set role-specific CLAUDE.md, overides dev CLAUDE.md ---
-cp instructions/STUDENT-CLAUDE.md CLAUDE.md
+cp instructions/CLAUDE-STUDENT.md CLAUDE.md
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1

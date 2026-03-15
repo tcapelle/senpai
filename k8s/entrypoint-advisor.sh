@@ -58,7 +58,7 @@ apt-get update && apt-get install -y gh gettext-base
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Stash role files outside the git tree so checkouts can't clobber them ---
-cp "$WORKDIR/instructions/ADVISOR-CLAUDE.md" /tmp/advisor-claude.md
+cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/advisor-claude.md
 PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH' < "$WORKDIR/instructions/prompt-advisor.md")"
 
 # --- Launch Claude Code in Ralph Loop ---

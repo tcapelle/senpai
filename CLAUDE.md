@@ -28,5 +28,5 @@ Autonomous ML research on CFD surrogates, coordinated through GitHub PRs with an
 ## instructions/
 
 Role-specific CLAUDE.md files. The Student and Advisor both use Claude Code. At pod launch, the appropriate role-specific file is copied over this CLAUDE.md:
-- `instructions/ADVISOR-CLAUDE.md` → advisor pods
-- `instructions/STUDENT-CLAUDE.md` → student pods
+- `instructions/CLAUDE-ADVISOR.md` → advisor pods
+- `instructions/CLAUDE-STUDENT.md` → student pods
