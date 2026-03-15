@@ -91,7 +91,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
       
       - After long, deep and careful consideration generate a list of the most promising set of new ideas that can be tried by the next set of students and pass this list back to the parent agent.
   </research-sub-agent-instructions>
-
+   
    - Once the sub-agent has returned a set of hypothesis, they have to be assigned to the idle students
    - For each idle student, assign it a hypothesis - create a branch and draft PR for each student-hypothesis pair:
       ```bash
@@ -104,7 +104,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
         --label "senpai" --label "student:<name>" --label "status:wip" \
         --base advisor --head exp/<hypothesis-name>
       ```
-   - If there are more hypothesis than idle students, pick your favorite hypotheses to assign until there are no more idle students to assign to.
+   - If there are more hypothesis than idle students, pick your favorite hypotheses to assign until there are no more idle students to assign to. 
 
 4. **Wait 5 minutes**, then go back to step 1.
 
