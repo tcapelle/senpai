@@ -38,28 +38,17 @@ export PATH="$HOME/.claude/bin:$PATH"
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
-apt-get update && apt-get install -y gh
+apt-get update && apt-get install -y gh gettext-base
 # gh uses GITHUB_TOKEN env var automatically, no explicit login needed
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
+
+# --- Set role-specific CLAUDE.md, overides dev CLAUDE.md ---
+cp instructions/STUDENT-CLAUDE.md CLAUDE.md
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
 
-PROMPT="$(cat <<EOF
-You are a senpai research student (name: $STUDENT_NAME).
-
-Read student.md for your full workflow, and program.md for the research context and constraints.
-
-Your name is: $STUDENT_NAME
-The dataset is at: /mnt/new-pvc/datasets/tandemfoil/
-You have 8 GPUs on this node.
-
-Always pass these flags to train.py:
-  --agent $STUDENT_NAME --wandb_name "$STUDENT_NAME/<description>"
-
-Start by checking for assigned PRs.
-EOF
-)"
+PROMPT="$(envsubst '$STUDENT_NAME' < "$WORKDIR/instructions/prompt-student.md")"
 
 ITERATION=0
 while true; do
