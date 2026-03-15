@@ -58,7 +58,7 @@ apt-get update && apt-get install -y gh gettext-base
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Stash role files outside the git tree so checkouts can't clobber them ---
-cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/advisor-claude.md
+cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/CLAUDE-ADVISOR.md
 PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH' < "$WORKDIR/instructions/prompt-advisor.md")"
 
 # --- Launch Claude Code in Ralph Loop ---
@@ -75,7 +75,7 @@ while true; do
     echo "=== Log: $LOGFILE ==="
 
     # Restore CLAUDE.md each iteration — advisor git checkouts during PR review can clobber it
-    cp /tmp/advisor-claude.md "$WORKDIR/CLAUDE.md"
+    cp /tmp/CLAUDE-ADVISOR.md "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
         claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
