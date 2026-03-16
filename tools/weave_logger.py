@@ -3,13 +3,13 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 """
-Weave thread logger daemon for senpai Claude Code agents.
+Weave trace logger daemon for senpai Claude Code agents.
 
 Polls ~/.claude/projects/<hash>/ every 30s for new session JSONL lines,
-reconstructs completed conversation turns, and logs them as Weave Threads.
+reconstructs completed conversation turns, and logs them as Weave traces.
 
-One Weave Thread per Claude Code sessionId.
-One Turn per completed prompt→response cycle (assistant stop_reason=end_turn).
+One Weave Trace per Claude Code sessionId (parent call = entire session).
+One child call per completed prompt→response cycle (assistant stop_reason=end_turn).
 
 Usage:
     python tools/weave_logger.py --role advisor --agent-name advisor
@@ -20,23 +20,35 @@ import argparse
 import json
 import os
 import time
+from dataclasses import dataclass, field
 from pathlib import Path
 
 import weave
 
-POLL_INTERVAL = 30  # seconds
+POLL_INTERVAL = 10  # seconds
 STATE_FILE = Path.home() / ".claude" / "weave_logger_state.json"
 
 
-@weave.op()
-def log_agent_turn(messages: list[dict], model: str, usage: dict) -> dict:
-    """Single agent turn — inputs/output captured by Weave as a Thread Turn."""
-    return {"role": "assistant", "content": messages[-1]["content"]}
+@dataclass
+class _CallStub:
+    """
+    Minimal stand-in for a weave Call object.
+
+    client.create_call() reads only .id, .trace_id, .thread_id, and ._children
+    from the parent argument, so this stub is sufficient to link child turns
+    to a parent that was created (and persisted) in a previous daemon iteration.
+    """
+
+    id: str
+    trace_id: str
+    thread_id: str | None = None
+    _children: list = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
 # JSONL parsing helpers
 # ---------------------------------------------------------------------------
+
 
 def extract_text(content) -> str:
     """Extract plain text from a message content field (str or block list)."""
@@ -88,11 +100,55 @@ def find_human_text(start_uuid: str, all_messages: dict) -> str:
 # Per-session processing
 # ---------------------------------------------------------------------------
 
+
+def _log_turn(
+    client,
+    file_state: dict,
+    session_id: str,
+    messages: list[dict],
+    model: str,
+    usage: dict,
+    attrs: dict,
+) -> None:
+    """
+    Log one agent turn as a child call under the session-level parent trace.
+
+    On the first turn for a session a parent call is created and its id/trace_id
+    are persisted in file_state so subsequent turns (even across daemon restarts)
+    link to the same root trace.
+    """
+    if not file_state.get("parent_call_id"):
+        parent = client.create_call(
+            "claude_session",
+            inputs={"session_id": session_id, **attrs},
+            use_stack=False,
+        )
+        file_state["parent_call_id"] = parent.id
+        file_state["trace_id"] = parent.trace_id
+    else:
+        parent = _CallStub(
+            id=file_state["parent_call_id"],
+            trace_id=file_state["trace_id"],
+        )
+
+    turn_call = client.create_call(
+        "agent_turn",
+        inputs={"messages": messages, "model": model, "usage": usage, **attrs},
+        parent=parent,
+        use_stack=False,
+    )
+    client.finish_call(
+        turn_call,
+        output={"role": "assistant", "content": messages[-1]["content"]},
+    )
+
+
 def process_session_file(
     session_file: Path,
     state: dict,
     agent_name: str,
     role: str,
+    client,
 ) -> None:
     """
     Read new lines from a session JSONL, find completed turns, log to Weave.
@@ -114,7 +170,7 @@ def process_session_file(
     new_lines: list[str] = []
 
     with open(session_file, encoding="utf-8", errors="replace") as f:
-        for i, raw in enumerate(f):
+        for raw in f:
             raw = raw.strip()
             if not raw:
                 continue
@@ -128,8 +184,6 @@ def process_session_file(
         # Re-read just the new bytes for the "what's new" check
         f.seek(prev_offset)
         new_lines = f.readlines()
-
-    file_state["offset"] = file_size
 
     # Walk new lines looking for completed turns
     for raw in new_lines:
@@ -169,7 +223,8 @@ def process_session_file(
         usage_raw = msg.get("usage", {})
         usage = {
             "input_tokens": usage_raw.get("input_tokens", 0)
-            + usage_raw.get("cache_read_input_tokens", 0),
+            + usage_raw.get("cache_read_input_tokens", 0)
+            + usage_raw.get("cache_creation_input_tokens", 0),
             "output_tokens": usage_raw.get("output_tokens", 0),
         }
 
@@ -180,26 +235,31 @@ def process_session_file(
             "session_id": session_id,
         }
 
-        with weave.thread(thread_id=session_id):
-            with weave.attributes(attrs):
-                log_agent_turn(
-                    messages=messages,
-                    model=msg.get("model", "unknown"),
-                    usage=usage,
-                )
+        _log_turn(
+            client=client,
+            file_state=file_state,
+            session_id=session_id,
+            messages=messages,
+            model=msg.get("model", "unknown"),
+            usage=usage,
+            attrs=attrs,
+        )
 
         logged_set.add(uuid)
         print(
             f"[weave_logger] turn logged  session={session_id[:8]}  uuid={uuid[:8]}"
-            f"  tokens={usage['input_tokens']}+{usage['output_tokens']}"
+            f"  tokens={usage['input_tokens']}+{usage['output_tokens']}",
+            flush=True,
         )
 
+    file_state["offset"] = file_size
     file_state["logged"] = list(logged_set)
 
 
 # ---------------------------------------------------------------------------
 # Project dir resolution
 # ---------------------------------------------------------------------------
+
 
 def compute_project_dir(workdir: str) -> Path:
     """
@@ -215,6 +275,7 @@ def compute_project_dir(workdir: str) -> Path:
 # Main loop
 # ---------------------------------------------------------------------------
 
+
 def run(args: argparse.Namespace) -> None:
     project_dir = (
         Path(args.project_dir)
@@ -222,18 +283,19 @@ def run(args: argparse.Namespace) -> None:
         else compute_project_dir(args.workdir)
     )
 
-    entity = args.wandb_entity or os.environ.get("WANDB_ENTITY", "")
-    project = args.wandb_project or os.environ.get("WANDB_PROJECT", "")
+    entity = args.wandb_entity or os.environ.get("WANDB_ENTITY", "wandb-applied-ai-team")
+    project = args.wandb_project or os.environ.get("WANDB_PROJECT", "senpai-v1")
     if not entity or not project:
         raise SystemExit("[weave_logger] WANDB_ENTITY and WANDB_PROJECT must be set")
 
-    weave.init(f"{entity}/{project}")
+    client = weave.init(f"{entity}/{project}")
     print(
         f"[weave_logger] started\n"
         f"  watching : {project_dir}\n"
         f"  role     : {args.role}\n"
         f"  agent    : {args.agent_name}\n"
-        f"  poll     : {POLL_INTERVAL}s\n"
+        f"  poll     : {POLL_INTERVAL}s\n",
+        flush=True,
     )
 
     while True:
@@ -247,7 +309,9 @@ def run(args: argparse.Namespace) -> None:
         if project_dir.exists():
             for session_file in sorted(project_dir.glob("*.jsonl")):
                 try:
-                    process_session_file(session_file, state, args.agent_name, args.role)
+                    process_session_file(
+                        session_file, state, args.agent_name, args.role, client
+                    )
                 except Exception as exc:
                     print(f"[weave_logger] error on {session_file.name}: {exc}")
 
@@ -261,7 +325,7 @@ def run(args: argparse.Namespace) -> None:
 
 def main() -> None:
     p = argparse.ArgumentParser(
-        description="Weave thread logger daemon for senpai Claude Code agents"
+        description="Weave trace logger daemon for senpai Claude Code agents"
     )
     p.add_argument("--role", required=True, choices=["advisor", "student"])
     p.add_argument("--agent-name", required=True, help="advisor or student name (e.g. frieren)")

@@ -33,8 +33,16 @@ fi
 # ── 2. uv install picks up weave ─────────────────────────────────────────────
 echo "[ 2 ] uv pip install -e . installs weave"
 cd "$WORKDIR"
-uv pip install --system -e . -q 2>&1 | tail -3
-if python3 -c "import weave" 2>/dev/null; then
+# Real k8s pods run as root so --system works; devpods run as non-root so use a venv.
+if [ "$(id -u)" = "0" ]; then
+    uv pip install --system -e . -q 2>&1 | tail -3
+    PYTHON3=python3
+else
+    uv venv .venv-test --clear -q 2>&1
+    uv pip install --python .venv-test/bin/python -e . -q 2>&1 | tail -3
+    PYTHON3=.venv-test/bin/python
+fi
+if $PYTHON3 -c "import weave" 2>/dev/null; then
     ok "import weave succeeded"
 else
     fail "import weave FAILED after uv install"
@@ -42,7 +50,7 @@ fi
 
 # ── 3. script is importable / arg-parseable ───────────────────────────────────
 echo "[ 3 ] weave_logger.py --help exits cleanly"
-if python3 tools/weave_logger.py --help > /dev/null 2>&1; then
+if $PYTHON3 tools/weave_logger.py --help > /dev/null 2>&1; then
     ok "--help exit 0"
 else
     fail "--help exited non-zero"
@@ -72,17 +80,18 @@ else
 JSONL
     fi
 
-    python3 "$WORKDIR/tools/weave_logger.py" \
+    PYTHONUNBUFFERED=1 $PYTHON3 "$WORKDIR/tools/weave_logger.py" \
         --role advisor \
         --agent-name advisor-test \
         --project-dir "$PROJECT_DIR" \
         > "$LOGFILE" 2>&1 &
     DAEMON_PID=$!
 
-    # Give it up to 15s to connect and log at least one turn
+    # Give it up to 15s to connect and log at least one turn.
+    # Accept either our own "turn logged" line or a Weave call URL as proof.
     for i in $(seq 1 15); do
         sleep 1
-        if grep -q "turn logged" "$LOGFILE" 2>/dev/null; then
+        if grep -qE "turn logged|wandb\.ai.*r/call" "$LOGFILE" 2>/dev/null; then
             break
         fi
     done
@@ -98,9 +107,9 @@ JSONL
         echo "------------------"
     fi
 
-    if grep -q "turn logged" "$LOGFILE"; then
-        TURNS=$(grep -c "turn logged" "$LOGFILE" || true)
-        ok "logged ${TURNS} turn(s)"
+    if grep -qE "turn logged|wandb\.ai.*r/call" "$LOGFILE"; then
+        TURNS=$(grep -cE "turn logged|wandb\.ai.*r/call" "$LOGFILE" || true)
+        ok "logged ${TURNS} turn/call event(s) to Weave"
     else
         fail "no turns logged"
         echo "--- daemon log ---"
