@@ -174,9 +174,9 @@ def _phys_norm(y, Umag, q):
 def _phys_denorm(y_p, Umag, q):
     """Reverse physics normalization: Ux/Umag→Ux, Uy/Umag→Uy, Cp→p."""
     y = y_p.clone()
-    y[:, :, 0:1] = y_p[:, :, 0:1] * Umag
-    y[:, :, 1:2] = y_p[:, :, 1:2] * Umag
-    y[:, :, 2:3] = y_p[:, :, 2:3] * q
+    y[:, :, 0:1] = y_p[:, :, 0:1].clamp(-50, 50) * Umag
+    y[:, :, 1:2] = y_p[:, :, 1:2].clamp(-50, 50) * Umag
+    y[:, :, 2:3] = y_p[:, :, 2:3].clamp(-100, 100) * q
     return y
 
 
@@ -365,8 +365,8 @@ for epoch in range(MAX_EPOCHS):
         val_surf = 0.0
         mae_surf = torch.zeros(3, device=device)
         mae_vol = torch.zeros(3, device=device)
-        n_surf = 0
-        n_vol = 0
+        n_surf = torch.zeros(3, device=device)
+        n_vol = torch.zeros(3, device=device)
         n_vbatches = 0
 
         with torch.no_grad():
@@ -400,17 +400,20 @@ for epoch in range(MAX_EPOCHS):
                 # Denormalize: phys_stats → Cp space → original scale
                 pred_phys = pred * phys_stats["y_std"] + phys_stats["y_mean"]
                 pred_orig = _phys_denorm(pred_phys, Umag, q)
-                err = (pred_orig - y).abs()
+                y_clamped = y.clamp(-1e6, 1e6)
+                err = (pred_orig - y_clamped).abs()
+                finite = err.isfinite()
+                err = err.where(finite, torch.zeros_like(err))
                 mae_surf += (err * surf_mask.unsqueeze(-1)).sum(dim=(0, 1))
                 mae_vol += (err * vol_mask.unsqueeze(-1)).sum(dim=(0, 1))
-                n_surf += surf_mask.sum().item()
-                n_vol += vol_mask.sum().item()
+                n_surf += (surf_mask.unsqueeze(-1) * finite).sum(dim=(0, 1)).float()
+                n_vol += (vol_mask.unsqueeze(-1) * finite).sum(dim=(0, 1)).float()
 
         val_vol /= max(n_vbatches, 1)
         val_surf /= max(n_vbatches, 1)
         split_loss = val_vol + cfg.surf_weight * val_surf
-        mae_surf /= max(n_surf, 1)
-        mae_vol /= max(n_vol, 1)
+        mae_surf /= n_surf.clamp(min=1)
+        mae_vol /= n_vol.clamp(min=1)
 
         val_metrics_per_split[split_name] = {
             f"{split_name}/vol_loss":    val_vol,
