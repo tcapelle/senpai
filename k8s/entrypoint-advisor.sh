@@ -7,12 +7,6 @@
 set -e
 set -o pipefail
 
-REPO_URL="${SENPAI_REPO_URL:?SENPAI_REPO_URL is required}"
-REPO_BRANCH="${SENPAI_REPO_BRANCH:-main}"
-RESEARCH_TAG="${SENPAI_RESEARCH_TAG:?SENPAI_RESEARCH_TAG is required}"
-STUDENT_NAMES="${SENPAI_STUDENT_NAMES:?SENPAI_STUDENT_NAMES is required}"
-ADVISOR_BRANCH="${SENPAI_ADVISOR_BRANCH:-advisor}"
-
 WORKDIR="/workspace/senpai"
 
 echo "=== Senpai Advisor ==="
