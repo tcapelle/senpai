@@ -537,7 +537,22 @@ for epoch in range(MAX_EPOCHS):
         abs_err = (pred - y_norm).abs()
         vol_mask = mask & ~is_surface
         surf_mask = mask & is_surface
-        vol_loss = (abs_err * vol_mask.unsqueeze(-1)).sum() / vol_mask.sum().clamp(min=1)
+
+        # Progressive resolution: subsample volume nodes in loss early in training
+        # Ramps from 20% → 100% of volume nodes over first 60 epochs
+        if epoch < 60:
+            vol_keep_ratio = 0.2 + 0.8 * (epoch / 60)
+            vol_indices = vol_mask.nonzero(as_tuple=False)
+            n_vol = vol_indices.shape[0]
+            n_keep = max(int(n_vol * vol_keep_ratio), 1)
+            perm = torch.randperm(n_vol, device=vol_mask.device)[:n_keep]
+            vol_mask_train = torch.zeros_like(vol_mask)
+            if n_keep > 0:
+                vol_mask_train[vol_indices[perm, 0], vol_indices[perm, 1]] = True
+        else:
+            vol_mask_train = vol_mask
+
+        vol_loss = (abs_err * vol_mask_train.unsqueeze(-1)).sum() / vol_mask_train.sum().clamp(min=1)
         surf_loss = (abs_err * surf_mask.unsqueeze(-1)).sum() / surf_mask.sum().clamp(min=1)
         loss = vol_loss + surf_weight * surf_loss
 
