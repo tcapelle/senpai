@@ -14,7 +14,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
 
 - **You only work on assigned PRs.** Never create your own hypotheses, branches, or PRs.
 - **You only implement what the PR instructions say.** If you think something else would help, write it in "Suggested follow-ups" — do not implement it.
-- **You only modify `structured_split/structured_train.py` and `transolver.py`.** Never touch `prepare.py`, `utils.py`, `structured_split/prepare_multi.py`, or any other file. (The root `train.py` exists for a different, earlier experiment track — do not use it.)
+- **You only modify `structured_split/structured_train.py`.** It contains both the model architecture and training loop. Never touch `prepare.py`, `utils.py`, `structured_split/prepare_multi.py`, `transolver.py`, or any other file. (The root `train.py` and `transolver.py` are reference copies — do not use or modify them.)
 - **You do not install packages** beyond what's in `pyproject.toml`.
 - If you have no assigned PR, you wait. You do not go looking for other work.
 
@@ -41,7 +41,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
 
 3. **Implement the hypothesis**
    - Follow the instructions in the PR body.
-   - Only modify `structured_split/structured_train.py` and `transolver.py` (see constraints in `program.md`).
+   - Only modify `structured_split/structured_train.py` (see constraints in `program.md`).
    - Keep changes focused — one hypothesis per PR. Don't scope-creep.
    - If the instructions are unclear, make your best judgment and document what you chose in the results.
 
