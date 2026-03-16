@@ -39,4 +39,4 @@ Lower is better. Surface accuracy (especially pressure) matters most.
 
 ## Roles
 
-Research is coordinated through GitHub PRs with an advisor/student model. See `advisor.md` and `student.md` for role-specific workflows.
+Research is coordinated through GitHub PRs with an advisor/student model.

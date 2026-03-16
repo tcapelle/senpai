@@ -53,29 +53,16 @@ chmod +x /usr/local/bin/kubectl
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
-apt-get update && apt-get install -y gh
+apt-get update && apt-get install -y gh gettext-base
 # gh uses GITHUB_TOKEN env var automatically, no explicit login needed
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
+# --- Stash role files outside the git tree so checkouts can't clobber them ---
+cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/CLAUDE-ADVISOR.md
+PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH' < "$WORKDIR/instructions/prompt-advisor.md")"
+
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
-
-PROMPT="$(cat <<EOF
-You are the senpai advisor.
-
-Read advisor.md for your full workflow, and program.md for the research context and constraints.
-
-Your students are: $STUDENT_NAMES
-Research tag: $RESEARCH_TAG
-W&B project: ${WANDB_ENTITY}/${WANDB_PROJECT}
-
-IMPORTANT: You work on the '$ADVISOR_BRANCH' branch, NOT main. All PRs target '$ADVISOR_BRANCH' as base. When creating branches, checkout from '$ADVISOR_BRANCH'. When merging, squash-merge into '$ADVISOR_BRANCH'.
-
-You can also monitor student pods: kubectl get deployments -l app=senpai
-
-Start by surveying the current state: check W&B metrics, list existing PRs, and identify what needs attention.
-EOF
-)"
 
 LOGDIR="/workspace/senpai/advisor_logs"
 mkdir -p "$LOGDIR"
@@ -86,6 +73,9 @@ while true; do
     LOGFILE="$LOGDIR/iteration_${ITERATION}_$(date +%Y%m%d_%H%M%S).jsonl"
     echo "=== Advisor Loop iteration $ITERATION ($(date)) ==="
     echo "=== Log: $LOGFILE ==="
+
+    # Restore CLAUDE.md each iteration — advisor git checkouts during PR review can clobber it
+    cp /tmp/CLAUDE-ADVISOR.md "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
         claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
