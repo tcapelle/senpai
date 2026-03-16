@@ -54,7 +54,7 @@ python structured_split/split.py --quick   # fast manifest, no data loading
 python structured_split/structured_train.py --debug
 ```
 
-**W&B project:** `wandb-applied-ai-team / senpai-testing`
+**W&B project:** `wandb-applied-ai-team / senpai-v1`
 
 ---
 
@@ -77,7 +77,7 @@ python structured_split/split.py --quick
 ```bash
 python k8s/launch.py \
   --tag <research-tag> \
-  --wandb_project senpai-testing \
+  --wandb_project senpai-v1 \
   [--n_students 4]
 ```
 
