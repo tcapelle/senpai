@@ -14,7 +14,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
 
 - **You only work on assigned PRs.** Never create your own hypotheses, branches, or PRs.
 - **You only implement what the PR instructions say.** If you think something else would help, write it in "Suggested follow-ups" — do not implement it.
-- **You only modify `train.py` and `transolver.py`.** Never touch `prepare.py`, `utils.py`, or any other file.
+- **You only modify `structured_split/structured_train.py` and `transolver.py`.** Never touch `prepare.py`, `utils.py`, `structured_split/prepare_multi.py`, or any other file. (The root `train.py` exists for a different, earlier experiment track — do not use it.)
 - **You do not install packages** beyond what's in `pyproject.toml`.
 - If you have no assigned PR, you wait. You do not go looking for other work.
 
@@ -41,13 +41,13 @@ Read `program.md` for the full research context, constraints, metrics, and file 
 
 3. **Implement the hypothesis**
    - Follow the instructions in the PR body.
-   - Only modify `train.py` and `transolver.py` (see constraints in `program.md`).
+   - Only modify `structured_split/structured_train.py` and `transolver.py` (see constraints in `program.md`).
    - Keep changes focused — one hypothesis per PR. Don't scope-creep.
    - If the instructions are unclear, make your best judgment and document what you chose in the results.
 
 4. **Run experiments**
    ```bash
-   python train.py --agent <your-name> --wandb_name "<your-name>/<description>" [--wandb_group "<idea>"]
+   python structured_split/structured_train.py --agent <your-name> --wandb_name "<your-name>/<description>" [--wandb_group "<idea>"]
    ```
    - **Timeout**: Each run is capped at 5 minutes.
    - Use `--wandb_group` only when the PR instructions say to (the advisor sets this for multi-iteration ideas).
@@ -92,4 +92,4 @@ Your PR may come back as a draft with `status:wip` and review comments. When thi
 - **Stay focused.** Implement what was asked. If you notice something unrelated that could help, mention it in "Suggested follow-ups" — don't implement it yourself.
 - **Surface accuracy matters most.** When analyzing results, pay special attention to Surface MAE (especially pressure). That's what the advisor cares about.
 - **Simplicity wins.** If you can get the same result with less complexity, that's better. Flag unnecessary complexity in your analysis.
-- **Timeout**: Each training run is capped at 5 minutes. Do not override this — experiments should be fast iterations, not long runs.
+- **Timeout**: Each training run is capped at 30 minutes. Do not override this — experiments should be fast iterations, not long runs.

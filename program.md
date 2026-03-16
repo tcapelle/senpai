@@ -14,11 +14,15 @@ We are training a neural network surrogate for CFD (computational fluid dynamics
 
 ## Codebase
 
-- `prepare.py` — dataset loading, preprocessing, collation. **Read-only.**
-- `train.py` — training script: hyperparameters, optimizer, training loop, loss formulation. **Modifiable.**
+- `structured_split/structured_train.py` — **primary training script** for the structured benchmark. **Modifiable.** (Reads committed manifest and stats; trains with 4 val tracks across 7 data sources.)
 - `transolver.py` — model architecture (Transolver with physics attention). **Modifiable.**
-- `utils.py` — visualization. **Read-only** (not relevant to metrics).
+- `prepare.py` — dataset loading and collation. **Read-only.**
+- `structured_split/prepare_multi.py` — extended preprocessing (24-dim x, foil-2 features). **Read-only.**
+- `utils.py` — visualization. **Read-only.**
 - `DATASET_REPORT.md` — dataset documentation.
+- `structured_split/README.md` — benchmark split documentation.
+
+> `train.py` (repo root) is an earlier, simpler single-dataset script. It is kept for reference but is not the active experiment track.
 
 No new packages beyond `pyproject.toml`.
 
@@ -35,7 +39,7 @@ Lower is better. Surface accuracy (especially pressure) matters most.
 
 **Simplicity criterion**: All else being equal, simpler is better. A small improvement that adds ugly complexity is not worth it.
 
-**Timeout**: Each training run is capped at 5 minutes. Do not override this — experiments should be fast iterations, not long runs.
+**Timeout**: Each training run is capped at 30 minutes. Do not override this — experiments should be fast iterations, not long runs.
 
 ## Roles
 

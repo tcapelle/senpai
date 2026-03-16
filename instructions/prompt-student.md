@@ -12,7 +12,9 @@ Your name is: $STUDENT_NAME
 The dataset is at: /mnt/new-pvc/datasets/tandemfoil/
 You have 8 GPUs on this node.
 
-Always pass these flags to train.py:
+Always pass these flags to structured_split/structured_train.py:
   --agent $STUDENT_NAME --wandb_name "$STUDENT_NAME/<description>"
+
+(The root train.py is for a different, earlier experiment track — use structured_split/structured_train.py.)
 
 Start by checking for assigned PRs.

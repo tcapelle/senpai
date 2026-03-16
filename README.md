@@ -64,7 +64,9 @@ graph TD
 | `program.md` | Shared context: problem, constraints, metrics |
 | `advisor.md` | Advisor protocol: hypotheses, review, merge/close |
 | `student.md` | Student protocol: poll, implement, experiment, report |
-| `train.py` / `transolver.py` | Training script and model (modifiable by students) |
+| `structured_split/structured_train.py` | **Primary training script** (modifiable by students) |
+| `transolver.py` | Model architecture (modifiable by students) |
+| `train.py` | Earlier single-dataset script (kept for reference, not active track) |
 | `.claude/skills/wandb-primary/` | W&B query skill (advisor + students) |
 | `.claude/skills/list-experiments/` | Experiment log skill (advisor only, stripped from students) |
 
