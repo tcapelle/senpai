@@ -33,17 +33,20 @@ export PATH="$HOME/.claude/bin:$PATH"
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
-apt-get update && apt-get install -y gh gettext-base
+apt-get update && apt-get install -y gh
 # gh uses GITHUB_TOKEN env var automatically, no explicit login needed
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Stash role files outside git tree so branch checkouts can't clobber them ---
 cp instructions/CLAUDE-STUDENT.md /tmp/CLAUDE-STUDENT.md
+cp instructions/prompt-student.md /tmp/prompt-student.md
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
 
-PROMPT="$(envsubst '$STUDENT_NAME' < "$WORKDIR/instructions/prompt-student.md")"
+PROMPT="$(eval "cat <<_PROMPT_EOF_
+$(cat /tmp/prompt-student.md)
+_PROMPT_EOF_")"
 
 # --- Start Weave thread logger in background ---
 python3 "$WORKDIR/tools/weave_logger.py" --role student --agent-name "$STUDENT_NAME" --workdir "$WORKDIR" &
