@@ -53,12 +53,12 @@ while true; do
     ITERATION=$((ITERATION + 1))
     echo "=== Ralph Loop iteration $ITERATION ($(date)) ==="
 
-    # Restore CLAUDE.md each iteration — git checkouts can clobber it
-    cp /tmp/CLAUDE-STUDENT.md "$WORKDIR/CLAUDE.md"
-
     # Clean dirty git state from previous iteration (crashed mid-implementation)
     git checkout -- . 2>/dev/null || true
     git clean -fd 2>/dev/null || true
+
+    # Restore CLAUDE.md after git clean — git checkout clobbers it with the dev version
+    cp /tmp/CLAUDE-STUDENT.md "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
         claude -p "$PROMPT" --dangerously-skip-permissions || true
