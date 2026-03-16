@@ -87,9 +87,11 @@ ds = MultiFieldDataset(
     cache_size=_cache_size,
 )
 
-total_expected = sum(manifest["split_counts"].values())
-assert len(ds) == total_expected, (
-    f"Dataset has {len(ds)} samples but manifest expects {total_expected}. "
+# Validate all manifest indices are in bounds (works for both full and quick manifests)
+all_manifest_idx = [i for v in manifest["splits"].values() for i in v]
+max_idx = max(all_manifest_idx) if all_manifest_idx else 0
+assert max_idx < len(ds), (
+    f"Manifest references index {max_idx} but dataset only has {len(ds)} samples. "
     "Pickle files may have changed — re-run split.py."
 )
 
