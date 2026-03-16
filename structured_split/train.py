@@ -209,7 +209,7 @@ run = wandb.init(
         "val_samples": {k: len(v) for k, v in val_splits.items()},
         "split_manifest": cfg.manifest,
     },
-    mode="offline" if cfg.debug else "online",
+    mode=os.environ.get("WANDB_MODE", "online"),
 )
 
 model_dir = Path(f"models/model-{run.id}")
