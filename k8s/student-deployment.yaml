@@ -46,9 +46,9 @@ spec:
         - name: REPO_BRANCH
           value: "{{REPO_BRANCH}}"
         - name: STUDENT_NAME
-          value: {{STUDENT_NAME}}
+          value: "{{STUDENT_NAME}}"
         - name: RESEARCH_TAG
-          value: {{RESEARCH_TAG}}
+          value: "{{RESEARCH_TAG}}"
         - name: WANDB_API_KEY
           valueFrom:
             secretKeyRef:
@@ -68,6 +68,8 @@ spec:
           value: "{{WANDB_ENTITY}}"
         - name: WANDB_PROJECT
           value: "{{WANDB_PROJECT}}"
+        - name: ADVISOR_BRANCH
+          value: "{{ADVISOR_BRANCH}}"
         - name: WANDB_MODE
           value: "online"
         resources:

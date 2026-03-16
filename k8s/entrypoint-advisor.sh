@@ -14,15 +14,8 @@ echo "Repo:     $REPO_URL (branch: $REPO_BRANCH)"
 echo "Tag:      $RESEARCH_TAG"
 echo "Students: $STUDENT_NAMES"
 
-# --- Clone repo and install deps ---
-if [ ! -d "$WORKDIR/.git" ]; then
-    git clone --branch "$REPO_BRANCH" "$REPO_URL" "$WORKDIR"
-fi
+# Repo already cloned by the deployment args block
 cd "$WORKDIR"
-
-# --- Stash role files before advisor branch checkout can clobber them ---
-cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/CLAUDE-ADVISOR.md
-cp "$WORKDIR/instructions/prompt-advisor.md" /tmp/prompt-advisor.md
 
 uv pip install --system -e .
 
@@ -39,6 +32,10 @@ else
     git checkout -b "$ADVISOR_BRANCH"
     git push -u origin "$ADVISOR_BRANCH"
 fi
+
+# --- Stash role files from the advisor branch (after checkout so we get the right version) ---
+cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" /tmp/CLAUDE-ADVISOR.md
+cp "$WORKDIR/instructions/prompt-advisor.md" /tmp/prompt-advisor.md
 
 # --- Install Claude Code ---
 curl -fsSL https://claude.ai/install.sh | bash
@@ -57,7 +54,7 @@ apt-get update && apt-get install -y gh gettext-base
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Build prompt (envsubst requires gettext-base installed above) ---
-PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH' < /tmp/prompt-advisor.md)"
+PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH $WANDB_ENTITY $WANDB_PROJECT' < /tmp/prompt-advisor.md)"
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1

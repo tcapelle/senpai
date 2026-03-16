@@ -13,11 +13,9 @@ echo "=== Senpai Student: $STUDENT_NAME ==="
 echo "Repo:   $REPO_URL (branch: $REPO_BRANCH)"
 echo "GPUs:   $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l) x $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
 
-# --- Clone repo and install deps ---
-if [ ! -d "$WORKDIR/.git" ]; then
-    git clone --branch "$REPO_BRANCH" "$REPO_URL" "$WORKDIR"
-fi
+# Repo already cloned by the deployment args block
 cd "$WORKDIR"
+# Students don't plan experiments — only the advisor uses this skill
 rm -rf .claude/skills/list-experiments
 uv pip install --system -e .
 
@@ -43,7 +41,7 @@ cp instructions/CLAUDE-STUDENT.md /tmp/CLAUDE-STUDENT.md
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
 
-PROMPT="$(envsubst '$STUDENT_NAME' < "$WORKDIR/instructions/prompt-student.md")"
+PROMPT="$(envsubst '$STUDENT_NAME $ADVISOR_BRANCH' < "$WORKDIR/instructions/prompt-student.md")"
 
 # --- Start Weave thread logger in background ---
 python3 "$WORKDIR/tools/weave_logger.py" --role student --agent-name "$STUDENT_NAME" --workdir "$WORKDIR" &
@@ -53,11 +51,11 @@ while true; do
     ITERATION=$((ITERATION + 1))
     echo "=== Ralph Loop iteration $ITERATION ($(date)) ==="
 
-    # Clean dirty git state from previous iteration (crashed mid-implementation)
-    git checkout -- . 2>/dev/null || true
-    git clean -fd 2>/dev/null || true
+    # Return to the cloned branch between iterations so the student starts clean
+    git checkout "$REPO_BRANCH" 2>/dev/null || true
+    git checkout -- CLAUDE.md 2>/dev/null || true
 
-    # Restore CLAUDE.md after git clean — git checkout clobbers it with the dev version
+    # Restore CLAUDE.md — branch checkout clobbers it with the repo version
     cp /tmp/CLAUDE-STUDENT.md "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
