@@ -254,8 +254,20 @@ model_config = dict(
 
 model = Transolver(**model_config).to(device)
 
-n_params = sum(p.numel() for p in model.parameters())
-optimizer = torch.optim.AdamW(model.parameters(), lr=cfg.lr, weight_decay=cfg.weight_decay)
+# --- Surface refinement head ---
+# Lightweight MLP that refines surface predictions using predicted values + input features.
+# Only applied to surface nodes (~5% of mesh). Volume predictions use base model output.
+surf_refine = torch.nn.Sequential(
+    torch.nn.Linear(3 + X_DIM, 64),
+    torch.nn.GELU(),
+    torch.nn.Linear(64, 3),
+).to(device)
+
+n_params = sum(p.numel() for p in model.parameters()) + sum(p.numel() for p in surf_refine.parameters())
+optimizer = torch.optim.AdamW(
+    list(model.parameters()) + list(surf_refine.parameters()),
+    lr=cfg.lr, weight_decay=cfg.weight_decay,
+)
 warmup_scheduler = torch.optim.lr_scheduler.LinearLR(optimizer, start_factor=0.1, total_iters=3)
 cosine_scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(optimizer, T_max=MAX_EPOCHS - 3)
 scheduler = torch.optim.lr_scheduler.SequentialLR(
@@ -316,6 +328,7 @@ for epoch in range(MAX_EPOCHS):
 
     # --- Train ---
     model.train()
+    surf_refine.train()
     epoch_vol = 0.0
     epoch_surf = 0.0
     n_batches = 0
@@ -336,17 +349,24 @@ for epoch in range(MAX_EPOCHS):
         with torch.amp.autocast("cuda", dtype=torch.bfloat16):
             pred = model({"x": x})["preds"]
         pred = pred.float()
+
+        # Surface refinement: residual correction using pred + input features
+        surf_delta = surf_refine(torch.cat([pred, x], dim=-1))
+        pred_surf_refined = pred + surf_delta
+
         sq_err = (pred - y_norm) ** 2
-        abs_err = (pred - y_norm).abs()
+        abs_err_surf = (pred_surf_refined - y_norm).abs()
         vol_mask = mask & ~is_surface
         surf_mask = mask & is_surface
         vol_loss = (sq_err * vol_mask.unsqueeze(-1)).sum() / vol_mask.sum().clamp(min=1)
-        surf_loss = (abs_err * surf_mask.unsqueeze(-1)).sum() / surf_mask.sum().clamp(min=1)
+        surf_loss = (abs_err_surf * surf_mask.unsqueeze(-1)).sum() / surf_mask.sum().clamp(min=1)
         loss = vol_loss + surf_weight * surf_loss
 
         optimizer.zero_grad()
         loss.backward()
-        torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
+        torch.nn.utils.clip_grad_norm_(
+            list(model.parameters()) + list(surf_refine.parameters()), max_norm=1.0
+        )
         optimizer.step()
         global_step += 1
         wandb.log({"train/loss": loss.item(), "train/surf_weight": surf_weight, "global_step": global_step})
@@ -362,6 +382,7 @@ for epoch in range(MAX_EPOCHS):
 
     # --- Validate across all splits ---
     model.eval()
+    surf_refine.eval()
     val_metrics_per_split: dict[str, dict] = {}
     val_loss_sum = 0.0
 
@@ -390,8 +411,13 @@ for epoch in range(MAX_EPOCHS):
                 with torch.amp.autocast("cuda", dtype=torch.bfloat16):
                     pred = model({"x": x})["preds"]
                 pred = pred.float()
+
+                # Apply surface refinement
+                surf_delta = surf_refine(torch.cat([pred, x], dim=-1))
+                pred_surf_refined = pred + surf_delta
+
                 sq_err = (pred - y_norm) ** 2
-                abs_err = (pred - y_norm).abs()
+                abs_err = (pred_surf_refined - y_norm).abs()
 
                 vol_mask = mask & ~is_surface
                 surf_mask = mask & is_surface
@@ -402,17 +428,22 @@ for epoch in range(MAX_EPOCHS):
                 val_surf += (abs_err * surf_mask.unsqueeze(-1)).sum().item() / surf_mask.sum().clamp(min=1).item()
                 n_vbatches += 1
 
-                # Denormalize: phys_stats → Cp space → original scale
-                pred_phys = pred * phys_stats["y_std"] + phys_stats["y_mean"]
-                pred_orig = _phys_denorm(pred_phys, Umag, q)
+                # Denormalize: surface uses refined pred, volume uses base pred
+                pred_surf_phys = pred_surf_refined * phys_stats["y_std"] + phys_stats["y_mean"]
+                pred_vol_phys = pred * phys_stats["y_std"] + phys_stats["y_mean"]
+                pred_surf_orig = _phys_denorm(pred_surf_phys, Umag, q)
+                pred_vol_orig = _phys_denorm(pred_vol_phys, Umag, q)
                 y_clamped = y.clamp(-1e6, 1e6)
-                err = (pred_orig - y_clamped).abs()
-                finite = err.isfinite()
-                err = err.where(finite, torch.zeros_like(err))
-                mae_surf += (err * surf_mask.unsqueeze(-1)).sum(dim=(0, 1))
-                mae_vol += (err * vol_mask.unsqueeze(-1)).sum(dim=(0, 1))
-                n_surf += (surf_mask.unsqueeze(-1) * finite).sum(dim=(0, 1)).float()
-                n_vol += (vol_mask.unsqueeze(-1) * finite).sum(dim=(0, 1)).float()
+                err_surf = (pred_surf_orig - y_clamped).abs()
+                err_vol = (pred_vol_orig - y_clamped).abs()
+                finite_surf = err_surf.isfinite()
+                finite_vol = err_vol.isfinite()
+                err_surf = err_surf.where(finite_surf, torch.zeros_like(err_surf))
+                err_vol = err_vol.where(finite_vol, torch.zeros_like(err_vol))
+                mae_surf += (err_surf * surf_mask.unsqueeze(-1)).sum(dim=(0, 1))
+                mae_vol += (err_vol * vol_mask.unsqueeze(-1)).sum(dim=(0, 1))
+                n_surf += (surf_mask.unsqueeze(-1) * finite_surf).sum(dim=(0, 1)).float()
+                n_vol += (vol_mask.unsqueeze(-1) * finite_vol).sum(dim=(0, 1)).float()
 
         val_vol /= max(n_vbatches, 1)
         val_surf /= max(n_vbatches, 1)
@@ -467,7 +498,7 @@ for epoch in range(MAX_EPOCHS):
         for split_metrics in val_metrics_per_split.values():
             for k, v in split_metrics.items():
                 best_metrics[f"best_{k}"] = v
-        torch.save(model.state_dict(), model_path)
+        torch.save({"model": model.state_dict(), "surf_refine": surf_refine.state_dict()}, model_path)
         tag = f" * -> {model_path}"
 
     split_summary = "  ".join(
@@ -500,7 +531,8 @@ if best_metrics:
     wandb.summary.update({"best_" + k: v for k, v in best_metrics.items()})
 
     print("\nGenerating flow field plots...")
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    _ckpt = torch.load(model_path, map_location=device, weights_only=True)
+    model.load_state_dict(_ckpt["model"])
     plot_dir = Path("plots") / run.id
     # Visualize from val_in_dist — same distribution as original val_ds
     images = visualize(model, val_splits["val_in_dist"], stats, device,
