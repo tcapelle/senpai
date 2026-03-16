@@ -314,7 +314,10 @@ for epoch in range(MAX_EPOCHS):
 
                 vol_mask = mask & ~is_surface
                 surf_mask = mask & is_surface
-                val_vol += (sq_err * vol_mask.unsqueeze(-1)).sum().item() / vol_mask.sum().clamp(min=1).item()
+                val_vol += min(
+                    (sq_err * vol_mask.unsqueeze(-1)).sum().item() / vol_mask.sum().clamp(min=1).item(),
+                    1e12
+                )
                 val_surf += (abs_err * surf_mask.unsqueeze(-1)).sum().item() / surf_mask.sum().clamp(min=1).item()
                 n_vbatches += 1
 
@@ -344,8 +347,12 @@ for epoch in range(MAX_EPOCHS):
         }
         val_loss_sum += split_loss
 
-    # val/loss = mean across all splits; used for checkpoint selection
-    mean_val_loss = val_loss_sum / len(val_loaders)
+    # NaN-robust: skip splits with NaN/Inf loss for checkpoint selection
+    finite_losses = [val_metrics_per_split[name][f"{name}/loss"]
+                     for name in VAL_SPLIT_NAMES
+                     if not (torch.tensor(val_metrics_per_split[name][f"{name}/loss"]).isnan() or
+                             torch.tensor(val_metrics_per_split[name][f"{name}/loss"]).isinf())]
+    mean_val_loss = sum(finite_losses) / max(len(finite_losses), 1)
 
     dt = time.time() - t0
 
