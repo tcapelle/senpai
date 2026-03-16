@@ -22,6 +22,7 @@ import os
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Optional
 
 import weave
 
@@ -41,7 +42,7 @@ class _CallStub:
 
     id: str
     trace_id: str
-    thread_id: str | None = None
+    thread_id: Optional[str] = None
     _children: list = field(default_factory=list)
 
 
@@ -105,7 +106,7 @@ def _log_turn(
     client,
     file_state: dict,
     session_id: str,
-    messages: list[dict],
+    messages: list,
     model: str,
     usage: dict,
     attrs: dict,
@@ -137,6 +138,15 @@ def _log_turn(
         parent=parent,
         use_stack=False,
     )
+    turn_call.summary = {
+        "usage": {
+            model: {
+                "input_tokens": usage["input_tokens"],
+                "output_tokens": usage["output_tokens"],
+                "requests": 1,
+            }
+        }
+    }
     client.finish_call(
         turn_call,
         output={"role": "assistant", "content": messages[-1]["content"]},
@@ -222,10 +232,14 @@ def process_session_file(
 
         usage_raw = msg.get("usage", {})
         usage = {
-            "input_tokens": usage_raw.get("input_tokens", 0)
-            + usage_raw.get("cache_read_input_tokens", 0)
-            + usage_raw.get("cache_creation_input_tokens", 0),
+            "input_tokens": (
+                usage_raw.get("input_tokens", 0)
+                + usage_raw.get("cache_read_input_tokens", 0)
+                + usage_raw.get("cache_creation_input_tokens", 0)
+            ),
             "output_tokens": usage_raw.get("output_tokens", 0),
+            "cache_read_tokens": usage_raw.get("cache_read_input_tokens", 0),
+            "cache_creation_tokens": usage_raw.get("cache_creation_input_tokens", 0),
         }
 
         attrs = {
