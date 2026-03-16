@@ -49,12 +49,14 @@ chmod +x /usr/local/bin/kubectl
 curl -fsSL https://cli.github.com/packages/githubcli-archive-keyring.gpg | dd of=/usr/share/keyrings/githubcli-archive-keyring.gpg
 chmod go+r /usr/share/keyrings/githubcli-archive-keyring.gpg
 echo "deb [arch=$(dpkg --print-architecture) signed-by=/usr/share/keyrings/githubcli-archive-keyring.gpg] https://cli.github.com/packages stable main" | tee /etc/apt/sources.list.d/github-cli-stable.list > /dev/null
-apt-get update && apt-get install -y gh gettext-base
+apt-get update && apt-get install -y gh
 # gh uses GITHUB_TOKEN env var automatically, no explicit login needed
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
-# --- Build prompt (envsubst requires gettext-base installed above) ---
-PROMPT="$(envsubst '$STUDENT_NAMES $RESEARCH_TAG $ADVISOR_BRANCH $WANDB_ENTITY $WANDB_PROJECT' < /tmp/prompt-advisor.md)"
+# --- Build prompt (bash heredoc expansion — no envsubst needed) ---
+PROMPT="$(eval "cat <<_PROMPT_EOF_
+$(cat /tmp/prompt-advisor.md)
+_PROMPT_EOF_")"
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1

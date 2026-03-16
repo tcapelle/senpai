@@ -38,15 +38,10 @@ spec:
           git clone --branch "$REPO_BRANCH" "$REPO_URL" /workspace/senpai
           cd /workspace/senpai
           bash k8s/entrypoint-advisor.sh
+        envFrom:
+        - configMapRef:
+            name: senpai-config-advisor
         env:
-        - name: REPO_URL
-          value: "{{REPO_URL}}"
-        - name: REPO_BRANCH
-          value: "{{REPO_BRANCH}}"
-        - name: RESEARCH_TAG
-          value: "{{RESEARCH_TAG}}"
-        - name: STUDENT_NAMES
-          value: "{{STUDENT_NAMES}}"
         - name: WANDB_API_KEY
           valueFrom:
             secretKeyRef:
@@ -62,12 +57,6 @@ spec:
             secretKeyRef:
               name: senpai-secrets
               key: github-token
-        - name: WANDB_ENTITY
-          value: "{{WANDB_ENTITY}}"
-        - name: WANDB_PROJECT
-          value: "{{WANDB_PROJECT}}"
-        - name: ADVISOR_BRANCH
-          value: "{{ADVISOR_BRANCH}}"
         resources:
           requests:
             cpu: "4"

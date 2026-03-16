@@ -48,29 +48,56 @@ def render_template(template: str, replacements: dict[str, str]) -> str:
     return out
 
 
+def render_configmap(name: str, labels: dict[str, str], data: dict[str, str]) -> str:
+    """Generate a ConfigMap YAML document."""
+    lines = ["apiVersion: v1", "kind: ConfigMap", "metadata:", f"  name: {name}", "  labels:"]
+    for k, v in labels.items():
+        lines.append(f"    {k}: {v}")
+    lines.append("data:")
+    for k, v in data.items():
+        lines.append(f"  {k}: \"{v}\"")
+    return "\n".join(lines)
+
+
 def render_student(template: str, student_name: str, tag: str, args: Args) -> str:
-    return render_template(template, {
+    configmap = render_configmap(
+        name=f"senpai-config-student-{student_name}",
+        labels={"app": "senpai", "role": "student", "research-tag": tag},
+        data={
+            "REPO_URL": args.repo_url,
+            "REPO_BRANCH": args.repo_branch,
+            "STUDENT_NAME": student_name,
+            "RESEARCH_TAG": tag,
+            "WANDB_ENTITY": args.wandb_entity,
+            "WANDB_PROJECT": args.wandb_project,
+            "ADVISOR_BRANCH": args.advisor_branch,
+            "WANDB_MODE": "online",
+        },
+    )
+    deployment = render_template(template, {
         "STUDENT_NAME": student_name,
         "RESEARCH_TAG": tag,
-        "WANDB_ENTITY": args.wandb_entity,
-        "WANDB_PROJECT": args.wandb_project,
-        "REPO_URL": args.repo_url,
-        "REPO_BRANCH": args.repo_branch,
         "IMAGE": args.image,
-        "ADVISOR_BRANCH": args.advisor_branch,
     })
+    return configmap + "\n---\n" + deployment
 
 
 def render_advisor(template: str, tag: str, student_list: list[str], args: Args) -> str:
-    return render_template(template, {
-        "RESEARCH_TAG": tag,
-        "STUDENT_NAMES": ",".join(student_list),
-        "WANDB_ENTITY": args.wandb_entity,
-        "WANDB_PROJECT": args.wandb_project,
-        "ADVISOR_BRANCH": args.advisor_branch,
-        "REPO_URL": args.repo_url,
-        "REPO_BRANCH": args.repo_branch,
-    })
+    configmap = render_configmap(
+        name="senpai-config-advisor",
+        labels={"app": "senpai", "role": "advisor", "research-tag": tag},
+        data={
+            "REPO_URL": args.repo_url,
+            "REPO_BRANCH": args.repo_branch,
+            "RESEARCH_TAG": tag,
+            "STUDENT_NAMES": ",".join(student_list),
+            "WANDB_ENTITY": args.wandb_entity,
+            "WANDB_PROJECT": args.wandb_project,
+            "ADVISOR_BRANCH": args.advisor_branch,
+        },
+    )
+    deployment = render_template(template, {"RESEARCH_TAG": tag})
+    return configmap + "\n---\n" + deployment
 
 
 def kubectl_apply(manifest: str, name: str):
@@ -132,8 +159,7 @@ def main():
         print(f"  kubectl get deployment senpai-advisor")
         print(f"  kubectl logs -f deployment/senpai-{student_list[0]}")
         print(f"\nStop:")
-        print(f"  kubectl delete deployments -l research-tag={args.tag}")
-        print(f"  kubectl delete deployment senpai-advisor")
+        print(f"  kubectl delete deployments,configmaps -l research-tag={args.tag}")
 
 
 if __name__ == "__main__":

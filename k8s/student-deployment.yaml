@@ -40,15 +40,10 @@ spec:
           git clone --branch "$REPO_BRANCH" "$REPO_URL" /workspace/senpai
           cd /workspace/senpai
           bash k8s/entrypoint-student.sh
+        envFrom:
+        - configMapRef:
+            name: senpai-config-student-{{STUDENT_NAME}}
         env:
-        - name: REPO_URL
-          value: "{{REPO_URL}}"
-        - name: REPO_BRANCH
-          value: "{{REPO_BRANCH}}"
-        - name: STUDENT_NAME
-          value: "{{STUDENT_NAME}}"
-        - name: RESEARCH_TAG
-          value: "{{RESEARCH_TAG}}"
         - name: WANDB_API_KEY
           valueFrom:
             secretKeyRef:
@@ -64,14 +59,6 @@ spec:
             secretKeyRef:
               name: senpai-secrets
               key: github-token
-        - name: WANDB_ENTITY
-          value: "{{WANDB_ENTITY}}"
-        - name: WANDB_PROJECT
-          value: "{{WANDB_PROJECT}}"
-        - name: ADVISOR_BRANCH
-          value: "{{ADVISOR_BRANCH}}"
-        - name: WANDB_MODE
-          value: "online"
         resources:
           requests:
             cpu: "120"
