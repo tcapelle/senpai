@@ -4,6 +4,14 @@
 
 Contributions to the main autoresearch loop are welcome! We would ask that you share wandb links or other evidence in your PR that the changes have improved the loop if possible :) 
 
+## Contributors Licence Agreement - CLA
+
+We ask that you sign our CLA when pushing code to this project. Post the following as a `comment` in your PR:
+
+```
+I have read the CLA Document and I hereby sign the CLA
+```
+
 ## License headers
 <!--- REUSE-IgnoreStart -->
 
