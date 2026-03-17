@@ -740,6 +740,7 @@ for epoch in range(MAX_EPOCHS):
                 pred_loss = pred / sample_stds
                 sq_err = (pred_loss - y_norm_scaled) ** 2
                 abs_err = (pred_loss - y_norm_scaled).abs()
+                abs_err = abs_err.nan_to_num(0.0)
 
                 vol_mask = mask & ~is_surface
                 surf_mask = mask & is_surface
@@ -767,6 +768,8 @@ for epoch in range(MAX_EPOCHS):
 
         val_vol /= max(n_vbatches, 1)
         val_surf /= max(n_vbatches, 1)
+        val_vol = float(torch.tensor(val_vol).nan_to_num(0.0).clamp(max=1e6))
+        val_surf = float(torch.tensor(val_surf).nan_to_num(0.0).clamp(max=1e6))
         split_loss = val_vol + cfg.surf_weight * val_surf
         mae_surf /= n_surf.clamp(min=1)
         mae_vol /= n_vol.clamp(min=1)
