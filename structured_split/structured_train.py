@@ -117,6 +117,7 @@ class Physics_Attention_Irregular_Mesh(nn.Module):
             nn.Linear(inner_dim, dim),
             nn.Dropout(dropout),
         )
+        self.attn_scale = nn.Parameter(torch.tensor(10.0))
 
     def forward(self, x):
         bsz, num_points, _ = x.shape
@@ -142,14 +143,11 @@ class Physics_Attention_Irregular_Mesh(nn.Module):
         slice_token_kv = slice_token.mean(dim=1, keepdim=True)  # shared K,V: (bsz, 1, slice_num, dim_head)
         k_slice_token = self.to_k(slice_token_kv).expand(-1, self.heads, -1, -1)
         v_slice_token = self.to_v(slice_token_kv).expand(-1, self.heads, -1, -1)
-        dropout_p = self.dropout.p if self.training else 0.0
-        out_slice_token = F.scaled_dot_product_attention(
-            q_slice_token,
-            k_slice_token,
-            v_slice_token,
-            dropout_p=dropout_p,
-            is_causal=False,
-        )
+        q_norm = F.normalize(q_slice_token, dim=-1)
+        k_norm = F.normalize(k_slice_token, dim=-1)
+        attn_logits = torch.matmul(q_norm, k_norm.transpose(-2, -1)) * self.attn_scale
+        attn_weights = F.softmax(attn_logits, dim=-1)
+        out_slice_token = torch.matmul(attn_weights, v_slice_token)
 
         out_x = torch.einsum("bhgc,bhng->bhnc", out_slice_token, slice_weights)
         out_x = rearrange(out_x, "b h n d -> b n (h d)")
