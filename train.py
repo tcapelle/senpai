@@ -22,6 +22,7 @@ KNOWN LIMITATIONS (inherited from read-only prepare.py):
 
 import os
 import time
+from pathlib import Path
 from collections.abc import Mapping
 
 import torch
@@ -472,9 +473,9 @@ model_config = dict(
 model = Transolver(**model_config).to(device)
 
 from copy import deepcopy
-ema_model = None
-ema_start_epoch = 65
-ema_decay = 0.998
+swa_model = None
+swa_start_epoch = 60
+swa_n = 0
 
 n_params = sum(p.numel() for p in model.parameters())
 
@@ -568,6 +569,10 @@ for epoch in range(MAX_EPOCHS):
         break
 
     t0 = time.time()
+
+    if epoch >= swa_start_epoch:
+        for pg in base_opt.param_groups:
+            pg['lr'] = 5e-4  # flat LR for SWA phase
 
     # Adaptive surface weight: loss-ratio based, clamped [5, 50]
     surf_weight = max(5.0, min(50.0, prev_vol_loss / max(prev_surf_loss, 1e-8)))
@@ -669,13 +674,15 @@ for epoch in range(MAX_EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
-        if epoch >= ema_start_epoch:
-            if ema_model is None:
-                ema_model = deepcopy(model)
+        if epoch >= swa_start_epoch:
+            if swa_model is None:
+                swa_model = deepcopy(model)
+                swa_n = 1
             else:
+                swa_n += 1
                 with torch.no_grad():
-                    for ep, mp in zip(ema_model.parameters(), model.parameters()):
-                        ep.data.mul_(ema_decay).add_(mp.data, alpha=1 - ema_decay)
+                    for sp, mp in zip(swa_model.parameters(), model.parameters()):
+                        sp.data.add_((mp.data - sp.data) / swa_n)
         global_step += 1
         wandb.log({"train/loss": loss.item(), "train/surf_weight": surf_weight, "global_step": global_step})
 
@@ -691,7 +698,7 @@ for epoch in range(MAX_EPOCHS):
     prev_surf_loss = epoch_surf
 
     # --- Validate across all splits ---
-    eval_model = ema_model if ema_model is not None else model
+    eval_model = swa_model if swa_model is not None else model
     eval_model.eval()
     model.eval()
     val_metrics_per_split: dict[str, dict] = {}
@@ -812,7 +819,7 @@ for epoch in range(MAX_EPOCHS):
         for split_metrics in val_metrics_per_split.values():
             for k, v in split_metrics.items():
                 best_metrics[f"best_{k}"] = v
-        save_model = ema_model if ema_model is not None else model
+        save_model = swa_model if swa_model is not None else model
         torch.save(save_model.state_dict(), model_path)
         tag = f" * -> {model_path}"
 
