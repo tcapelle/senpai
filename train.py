@@ -412,9 +412,9 @@ def _phys_norm(y, Umag, q):
 def _phys_denorm(y_p, Umag, q):
     """Reverse physics normalization: Ux/Umag→Ux, Uy/Umag→Uy, Cp→p."""
     y = y_p.clone()
-    y[:, :, 0:1] = y_p[:, :, 0:1].clamp(-50, 50) * Umag
-    y[:, :, 1:2] = y_p[:, :, 1:2].clamp(-50, 50) * Umag
-    y[:, :, 2:3] = y_p[:, :, 2:3].clamp(-100, 100) * q
+    y[:, :, 0:1] = y_p[:, :, 0:1].clamp(-10, 10) * Umag
+    y[:, :, 1:2] = y_p[:, :, 1:2].clamp(-10, 10) * Umag
+    y[:, :, 2:3] = y_p[:, :, 2:3].clamp(-20, 20) * q
     return y
 
 loader_kwargs = dict(collate_fn=pad_collate, num_workers=4, pin_memory=True,
@@ -745,9 +745,12 @@ for epoch in range(MAX_EPOCHS):
                 surf_mask = mask & is_surface
                 val_vol += min(
                     (abs_err * vol_mask.unsqueeze(-1)).sum().item() / vol_mask.sum().clamp(min=1).item(),
-                    1e12
+                    1e6
                 )
-                val_surf += (abs_err * surf_mask.unsqueeze(-1)).sum().item() / surf_mask.sum().clamp(min=1).item()
+                val_surf += min(
+                    (abs_err * surf_mask.unsqueeze(-1)).sum().item() / surf_mask.sum().clamp(min=1).item(),
+                    1e6
+                )
                 n_vbatches += 1
 
                 # Denormalize: phys_stats → Cp space → original scale
