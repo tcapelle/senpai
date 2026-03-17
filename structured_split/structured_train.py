@@ -29,6 +29,7 @@ from pathlib import Path
 # Reach repo root so we can import prepare, transolver, utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import math
 import os
 import time
 from collections.abc import Mapping
@@ -314,6 +315,13 @@ class Transolver(nn.Module):
             new_pos = self.get_grid(pos)
             x = torch.cat((x, new_pos), dim=-1)
 
+        xy = x[:, :, 0:2]
+        fourier_feats = []
+        for f in [1, 2, 4]:
+            fourier_feats.append(torch.sin(f * math.pi * xy))
+            fourier_feats.append(torch.cos(f * math.pi * xy))
+        x = torch.cat([x, torch.cat(fourier_feats, dim=-1)], dim=-1)
+
         fx = self.preprocess(x)
         fx = fx * self.placeholder_scale[None, None, :] + self.placeholder_shift[None, None, :]
 
@@ -441,7 +449,7 @@ print(f"  Cp stats — mean: {_pmean.tolist()}, std: {_pstd.tolist()}")
 
 model_config = dict(
     space_dim=2,
-    fun_dim=X_DIM - 2,  # X_DIM=24; fun_dim + space_dim must equal x.shape[-1]
+    fun_dim=X_DIM - 2 + 12,  # X_DIM=24 + 12 Fourier features; fun_dim + space_dim must equal x.shape[-1]
     out_dim=3,
     n_hidden=128,
     n_layers=1,       # was 2 — 1 layer for maximum epochs in 30 min
