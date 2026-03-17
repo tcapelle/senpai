@@ -631,10 +631,14 @@ for epoch in range(MAX_EPOCHS):
             vol_mask_train = vol_mask
 
         vol_loss = (abs_err * vol_mask_train.unsqueeze(-1)).sum() / vol_mask_train.sum().clamp(min=1)
-        is_tandem = (x[:, 0, 21].abs() > 0.01)
-        tandem_boost = torch.where(is_tandem, 1.5, 1.0).to(device)
-        surf_per_sample = (abs_err * surf_mask.unsqueeze(-1)).sum(dim=(1, 2)) / surf_mask.sum(dim=1).clamp(min=1).float()
-        surf_loss = (surf_per_sample * tandem_boost).mean()
+        with torch.no_grad():
+            p_target = y_norm[:, :, 2:3]  # pressure channel
+            dp = (p_target[:, 1:, :] - p_target[:, :-1, :]).abs()
+            dp = F.pad(dp, (0, 0, 0, 1), value=0)  # pad to match N
+            grad_mag = dp.squeeze(-1)  # [B, N]
+            grad_weight = 1.0 + 0.5 * (grad_mag / grad_mag.mean(dim=1, keepdim=True).clamp(min=0.01))
+            grad_weight = grad_weight.unsqueeze(-1)  # [B, N, 1]
+        surf_loss = (abs_err * grad_weight * surf_mask.unsqueeze(-1)).sum() / surf_mask.sum().clamp(min=1)
         loss = vol_loss + surf_weight * surf_loss
 
         # Multi-scale loss: coarse spatial pooling
