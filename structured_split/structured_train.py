@@ -637,6 +637,12 @@ for epoch in range(MAX_EPOCHS):
         surf_loss = (surf_per_sample * tandem_boost).mean()
         loss = vol_loss + surf_weight * surf_loss
 
+        # Foil-2 surface boost: extra gradient signal for second foil nodes
+        foil2_indicator = (x[:, :, 16:24].abs().sum(dim=-1) > 0.01)  # [B, N]
+        foil2_surf = surf_mask & foil2_indicator
+        foil2_loss = (abs_err * foil2_surf.unsqueeze(-1)).sum() / foil2_surf.sum().clamp(min=1)
+        loss = loss + surf_weight * 1.0 * foil2_loss
+
         # Multi-scale loss: coarse spatial pooling
         coarse_pool_size = 64
         B, N, C = pred.shape
