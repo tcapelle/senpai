@@ -138,6 +138,7 @@ class Physics_Attention_Irregular_Mesh(nn.Module):
         slice_norm = slice_weights.sum(2)
         slice_token = torch.einsum("bhnc,bhng->bhgc", fx_mid, slice_weights)
         slice_token = slice_token / ((slice_norm + 1e-5)[:, :, :, None].repeat(1, 1, 1, self.dim_head))
+        self.last_slice_token = slice_token  # store for aux loss
 
         q_slice_token = self.to_q(slice_token)
         slice_token_kv = slice_token.mean(dim=1, keepdim=True)  # shared K,V: (bsz, 1, slice_num, dim_head)
@@ -149,7 +150,8 @@ class Physics_Attention_Irregular_Mesh(nn.Module):
         attn_weights = F.softmax(attn_logits, dim=-1)
         out_slice_token = torch.matmul(attn_weights, v_slice_token)
 
-        out_x = torch.einsum("bhgc,bhng->bhnc", out_slice_token, slice_weights)
+        slice_weights_detached = slice_weights.detach()
+        out_x = torch.einsum("bhgc,bhng->bhnc", out_slice_token, slice_weights_detached)
         out_x = rearrange(out_x, "b h n d -> b n (h d)")
         return self.to_out(out_x)
 
@@ -636,6 +638,13 @@ for epoch in range(MAX_EPOCHS):
             coarse_err = (pred_coarse - y_coarse).abs()
             coarse_loss = (coarse_err * mask_coarse.unsqueeze(-1)).sum() / mask_coarse.sum().clamp(min=1)
             loss = loss + 1.0 * coarse_loss
+
+        # Aux loss: maximize inter-slice variance (encourage diverse slice tokens)
+        aux_loss = -0.01 * sum(block.attn.last_slice_token.var(dim=1).mean() for block in model.blocks)
+        loss = loss + aux_loss
+        # Detach stored slice tokens so deepcopy (for EMA) can safely copy the model
+        for block in model.blocks:
+            block.attn.last_slice_token = block.attn.last_slice_token.detach()
 
         optimizer.zero_grad()
         loss.backward()
