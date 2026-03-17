@@ -24,8 +24,8 @@ git checkout $ADVISOR_BRANCH && git pull origin $ADVISOR_BRANCH
 
 2. Create an experiment branch:
 ```bash
-git checkout -b exp/<hypothesis-name>
-git push -u origin exp/<hypothesis-name>
+git checkout -b $ADVISOR_BRANCH/<hypothesis-name>
+git push -u origin $ADVISOR_BRANCH/<hypothesis-name>
 ```
 
 3. Create a labeled draft PR:
@@ -33,8 +33,8 @@ git push -u origin exp/<hypothesis-name>
 gh pr create --draft \
   --title "<hypothesis title>" \
   --body "<PR body — use template below>" \
-  --label "senpai" --label "student:<name>" --label "status:wip" \
-  --base $ADVISOR_BRANCH --head exp/<hypothesis-name>
+  --label "$ADVISOR_BRANCH" --label "student:<name>" --label "status:wip" \
+  --base $ADVISOR_BRANCH --head $ADVISOR_BRANCH/<hypothesis-name>
 ```
 
 4. Return to the advisor branch before the next assignment:

@@ -21,7 +21,7 @@ Query W&B for the best metrics so far. Identify the current baseline.
 
 List all open PRs:
 ```bash
-gh pr list --label "senpai" --json number,title,state,labels,headRefName,isDraft
+gh pr list --label "$ADVISOR_BRANCH" --json number,title,state,labels,headRefName,isDraft
 ```
 
 Identify:
