@@ -532,6 +532,7 @@ with open(model_dir / "config.yaml", "w") as f:
 best_val = float("inf")
 best_metrics = {}
 global_step = 0
+teacher_model = None
 train_start = time.time()
 
 for epoch in range(MAX_EPOCHS):
@@ -546,6 +547,11 @@ for epoch in range(MAX_EPOCHS):
     sw_start, sw_end = 5.0, 30.0
     progress = epoch / MAX_EPOCHS
     surf_weight = sw_start + (sw_end - sw_start) * progress
+
+    if epoch == 60:
+        import copy
+        teacher_model = copy.deepcopy(model)
+        teacher_model.eval()
 
     # --- Train ---
     model.train()
@@ -609,6 +615,12 @@ for epoch in range(MAX_EPOCHS):
             coarse_err = (pred_coarse - y_coarse).abs()
             coarse_loss = (coarse_err * mask_coarse.unsqueeze(-1)).sum() / mask_coarse.sum().clamp(min=1)
             loss = loss + 1.0 * coarse_loss
+
+        if epoch > 60 and teacher_model is not None:
+            with torch.no_grad():
+                teacher_pred = teacher_model({"x": x})["preds"].float()
+            kd_loss = (pred - teacher_pred).abs().mean()
+            loss = loss + 0.3 * kd_loss
 
         optimizer.zero_grad()
         loss.backward()
