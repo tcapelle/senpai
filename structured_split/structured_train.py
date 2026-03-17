@@ -454,6 +454,11 @@ model_config = dict(
 
 model = Transolver(**model_config).to(device)
 
+from copy import deepcopy
+ema_model = None
+ema_start_epoch = 65
+ema_decay = 0.998
+
 n_params = sum(p.numel() for p in model.parameters())
 
 
@@ -636,6 +641,13 @@ for epoch in range(MAX_EPOCHS):
         loss.backward()
         torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
         optimizer.step()
+        if epoch >= ema_start_epoch:
+            if ema_model is None:
+                ema_model = deepcopy(model)
+            else:
+                with torch.no_grad():
+                    for ep, mp in zip(ema_model.parameters(), model.parameters()):
+                        ep.data.mul_(ema_decay).add_(mp.data, alpha=1 - ema_decay)
         global_step += 1
         wandb.log({"train/loss": loss.item(), "train/surf_weight": surf_weight, "global_step": global_step})
 
@@ -649,6 +661,8 @@ for epoch in range(MAX_EPOCHS):
     epoch_surf /= n_batches
 
     # --- Validate across all splits ---
+    eval_model = ema_model if ema_model is not None else model
+    eval_model.eval()
     model.eval()
     val_metrics_per_split: dict[str, dict] = {}
     val_loss_sum = 0.0
@@ -688,7 +702,7 @@ for epoch in range(MAX_EPOCHS):
                 y_norm_scaled = y_norm / sample_stds
 
                 with torch.amp.autocast("cuda", dtype=torch.bfloat16):
-                    pred = model({"x": x})["preds"]
+                    pred = eval_model({"x": x})["preds"]
                 pred = pred.float()
                 pred_loss = pred / sample_stds
                 sq_err = (pred_loss - y_norm_scaled) ** 2
