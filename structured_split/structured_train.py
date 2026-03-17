@@ -29,6 +29,7 @@ from pathlib import Path
 # Reach repo root so we can import prepare, transolver, utils
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
+import math
 import os
 import time
 from collections.abc import Mapping
@@ -543,6 +544,8 @@ global_step = 0
 train_start = time.time()
 prev_vol_loss = 1.0
 prev_surf_loss = 0.2  # initial ratio ~5 (clamped minimum)
+snapshots = []
+SNAPSHOT_EPOCHS = {50, 60, 70}
 
 for epoch in range(MAX_EPOCHS):
     elapsed_min = (time.time() - train_start) / 60.0
@@ -661,6 +664,9 @@ for epoch in range(MAX_EPOCHS):
     epoch_surf /= n_batches
     prev_vol_loss = epoch_vol
     prev_surf_loss = epoch_surf
+
+    if epoch in SNAPSHOT_EPOCHS:
+        snapshots.append({k: v.clone() for k, v in model.state_dict().items()})
 
     # --- Validate across all splits ---
     eval_model = ema_model if ema_model is not None else model
@@ -798,6 +804,81 @@ for epoch in range(MAX_EPOCHS):
         f"val[{split_summary}]{tag}"
     )
 
+
+# --- Model soup: average snapshots + final model, re-validate ---
+snapshots.append({k: v.clone() for k, v in model.state_dict().items()})  # add final model
+if len(snapshots) >= 2:
+    print(f"\nModel soup: averaging {len(snapshots)} snapshots (epochs {sorted(SNAPSHOT_EPOCHS)} + final)...")
+    soup_state = {}
+    for k in snapshots[0]:
+        stacked = torch.stack([s[k].float() for s in snapshots], dim=0)
+        avg = stacked.mean(dim=0)
+        soup_state[k] = avg.to(snapshots[0][k].dtype)
+    model.load_state_dict(soup_state)
+    model.eval()
+    soup_val_losses = []
+    for split_name, vloader in val_loaders.items():
+        val_vol, val_surf, n_vbatches = 0.0, 0.0, 0
+        mae_surf = torch.zeros(3, device=device)
+        n_surf = torch.zeros(3, device=device)
+        with torch.no_grad():
+            for x, y, is_surface, mask in vloader:
+                x, y = x.to(device, non_blocking=True), y.to(device, non_blocking=True)
+                is_surface = is_surface.to(device, non_blocking=True)
+                mask = mask.to(device, non_blocking=True)
+                x = (x - stats["x_mean"]) / stats["x_std"]
+                Umag, q = _umag_q(y, mask)
+                y_phys = _phys_norm(y, Umag, q)
+                y_norm = (y_phys - phys_stats["y_mean"]) / phys_stats["y_std"]
+                raw_gap = x[:, 0, 21]
+                is_tandem_b = raw_gap.abs() > 0.5
+                B = y_norm.shape[0]
+                sample_stds = torch.ones(B, 1, 3, device=device)
+                channel_clamps = torch.tensor([0.1, 0.1, 0.5], device=device)
+                for b in range(B):
+                    if not is_tandem_b[b]:
+                        valid = mask[b]
+                        sample_stds[b, 0] = y_norm[b, valid].std(dim=0).clamp(min=channel_clamps)
+                y_norm_scaled = y_norm / sample_stds
+                with torch.amp.autocast("cuda", dtype=torch.bfloat16):
+                    pred = model({"x": x})["preds"]
+                pred = pred.float()
+                pred_loss = pred / sample_stds
+                abs_err = (pred_loss - y_norm_scaled).abs()
+                vol_mask = mask & ~is_surface
+                surf_mask = mask & is_surface
+                val_vol += min((abs_err * vol_mask.unsqueeze(-1)).sum().item() / vol_mask.sum().clamp(min=1).item(), 1e12)
+                val_surf += (abs_err * surf_mask.unsqueeze(-1)).sum().item() / surf_mask.sum().clamp(min=1).item()
+                n_vbatches += 1
+                pred_phys = pred * phys_stats["y_std"] + phys_stats["y_mean"]
+                pred_orig = _phys_denorm(pred_phys, Umag, q)
+                y_clamped = y.clamp(-1e6, 1e6)
+                err = (pred_orig - y_clamped).abs()
+                finite = err.isfinite()
+                err = err.where(finite, torch.zeros_like(err))
+                mae_surf += (err * surf_mask.unsqueeze(-1)).sum(dim=(0, 1))
+                n_surf += (surf_mask.unsqueeze(-1) * finite).sum(dim=(0, 1)).float()
+        val_vol /= max(n_vbatches, 1)
+        val_surf /= max(n_vbatches, 1)
+        split_loss = val_vol + cfg.surf_weight * val_surf
+        mae_surf_mean = mae_surf / n_surf.clamp(min=1)
+        if not math.isfinite(split_loss):
+            split_loss = float("nan")
+        else:
+            soup_val_losses.append(split_loss)
+        print(f"  [soup] {split_name}: loss={split_loss:.4f}  mae_surf_p={mae_surf_mean[2].item():.2f}")
+        wandb.log({f"soup_{split_name}/loss": split_loss,
+                   f"soup_{split_name}/mae_surf_p": mae_surf_mean[2].item(),
+                   "global_step": global_step})
+    if soup_val_losses:
+        soup_val_loss = sum(soup_val_losses) / len(soup_val_losses)
+        print(f"  [soup] val/loss={soup_val_loss:.4f}")
+        wandb.log({"soup/val_loss": soup_val_loss, "global_step": global_step})
+        if soup_val_loss < best_val:
+            print(f"  [soup] Soup is better! Saving soup checkpoint.")
+            torch.save(soup_state, model_path)
+            best_val = soup_val_loss
+            best_metrics["val_loss"] = soup_val_loss
 
 # --- Final summary ---
 total_time = (time.time() - train_start) / 60.0
