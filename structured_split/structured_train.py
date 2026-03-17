@@ -238,6 +238,7 @@ class Transolver(nn.Module):
         self.output_fields = output_fields
         self.output_dims = output_dims
 
+        in_dim = fun_dim + space_dim
         if self.unified_pos:
             self.preprocess = MLP(
                 fun_dim + self.ref * self.ref * self.ref,
@@ -248,7 +249,8 @@ class Transolver(nn.Module):
                 act=act,
             )
         else:
-            self.preprocess = MLP(fun_dim + space_dim, n_hidden * 2, n_hidden, n_layers=1, res=True, act=act)
+            self.preprocess_geo = MLP(12, 256, n_hidden // 2, n_layers=1, res=True, act=act)
+            self.preprocess_cond = MLP(in_dim - 12, 256, n_hidden // 2, n_layers=1, res=True, act=act)
 
         self.n_hidden = n_hidden
         self.space_dim = space_dim
@@ -328,7 +330,9 @@ class Transolver(nn.Module):
             x = torch.cat((x, new_pos), dim=-1)
 
         raw_xy = x[:, :, :2]
-        fx = self.preprocess(x)
+        fx_geo = self.preprocess_geo(x[:, :, :12])
+        fx_cond = self.preprocess_cond(x[:, :, 12:])
+        fx = torch.cat([fx_geo, fx_cond], dim=-1)
         fx = fx * self.placeholder_scale[None, None, :] + self.placeholder_shift[None, None, :]
 
         for block in self.blocks:
