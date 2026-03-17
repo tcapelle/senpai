@@ -30,6 +30,7 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent.parent))
 
 import os
+import math
 import time
 from collections.abc import Mapping
 
@@ -533,6 +534,17 @@ best_metrics = {}
 global_step = 0
 train_start = time.time()
 
+# Pre-compute per-sample difficulty for curriculum sampling (|AoA|/10 + log(Re)/15 + is_tandem*0.3)
+# x layout: pos(2), saf(2), dsdf(8), is_surface(1), log_Re(1=idx13), AoA0_rad(1=idx14), ..., gap(1=idx22)
+_diff_list = []
+for _i in range(len(train_ds)):
+    _x, _, _ = train_ds[_i]
+    _aoa_deg = abs(_x[0, 14].item()) * (180.0 / math.pi)
+    _log_re = _x[0, 13].item()
+    _is_tandem = float(abs(_x[0, 22].item()) > 1e-6)
+    _diff_list.append(_aoa_deg / 10.0 + _log_re / 15.0 + _is_tandem * 0.3)
+_difficulty = torch.tensor(_diff_list, dtype=torch.float64)
+
 for epoch in range(MAX_EPOCHS):
     elapsed_min = (time.time() - train_start) / 60.0
     if elapsed_min >= MAX_TIMEOUT:
@@ -545,6 +557,12 @@ for epoch in range(MAX_EPOCHS):
     sw_start, sw_end = 5.0, 30.0
     progress = epoch / MAX_EPOCHS
     surf_weight = sw_start + (sw_end - sw_start) * progress
+
+    # Curriculum: down-weight hard samples early, anneal to balanced by epoch 30
+    if not cfg.debug and epoch < 30:
+        _curr_w = sample_weights * torch.exp(-_difficulty * (1.0 - epoch / 30.0))
+        _sampler = WeightedRandomSampler(_curr_w, num_samples=len(train_ds), replacement=True)
+        train_loader = DataLoader(train_ds, batch_size=cfg.batch_size, sampler=_sampler, **loader_kwargs)
 
     # --- Train ---
     model.train()
