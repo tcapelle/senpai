@@ -869,11 +869,29 @@ if best_metrics:
     wandb.summary.update({"best_" + k: v for k, v in best_metrics.items()})
 
     print("\nGenerating flow field plots...")
-    model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    vis_model = ema_model if ema_model is not None else model
+    vis_model.load_state_dict(torch.load(model_path, map_location=device, weights_only=True))
+    vis_model.eval()
     plot_dir = Path("plots") / run.id
     n = 1 if cfg.debug else 4
     for split_name, split_ds in val_splits.items():
-        images = visualize(model, split_ds, stats, device, n_samples=n, out_dir=plot_dir / split_name)
+        samples = []
+        for i in range(min(n, len(split_ds))):
+            x, y_true, is_surface = split_ds[i]
+            with torch.no_grad():
+                x_dev = x.unsqueeze(0).to(device)
+                y_dev = y_true.unsqueeze(0).to(device)
+                is_surf_dev = is_surface.unsqueeze(0).to(device)
+                mask = torch.ones(1, x_dev.shape[1], dtype=torch.bool, device=device)
+                x_n = (x_dev - stats["x_mean"]) / stats["x_std"]
+                curv = x_n[:, :, 2:6].norm(dim=-1, keepdim=True) * is_surf_dev.float().unsqueeze(-1)
+                x_n = torch.cat([x_n, curv], dim=-1)
+                Umag, q = _umag_q(y_dev, mask)
+                pred = vis_model({"x": x_n})["preds"].float()
+                pred_phys = pred * phys_stats["y_std"] + phys_stats["y_mean"]
+                y_pred = _phys_denorm(pred_phys, Umag, q).squeeze(0).cpu()
+            samples.append((x[:, :2], y_true, y_pred, is_surface))
+        images = visualize(samples, out_dir=plot_dir / split_name)
         if images:
             wandb.log({f"val_predictions/{split_name}": [wandb.Image(str(p)) for p in images], "global_step": global_step})
 
