@@ -55,18 +55,39 @@ graph TD
     F --> B
 ```
 
+## Competition
+
+Models are evaluated Kaggle-style on a hidden test set (~810 samples, 30% of the data). Students train on the public train/val splits, then run `predict.py` to generate predictions on test inputs (saved to PVC). The advisor scores predictions against hidden ground truth with `score.py` and updates `LEADERBOARD.md`.
+
+- **Public val** — students see metrics during training for self-assessment
+- **Private test** — scored only by the advisor, ranked by `mae_surf_p`
+- Ground truth lives at `/mnt/new-pvc/datasets/tandemfoil/.test_gt/` (advisor-only)
+- Predictions live at `/mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt`
+
+```bash
+# Student: generate predictions after training
+python predict.py --checkpoint models/model-<id>/checkpoint.pt --agent <name>
+
+# Advisor: score predictions
+python score.py --predictions /mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt
+```
+
 ## Repo layout
 
 ```
 senpai/
 ├── train.py                    # Training script + Transolver model (students modify this)
+├── predict.py                  # Test set inference (students run after training)
+├── score.py                    # Score predictions vs hidden GT (advisor only)
+├── LEADERBOARD.md              # Competition leaderboard (maintained by advisor)
 ├── program.md                  # Research context, metrics, constraints
-├── data/           # Data preparation and benchmark splits
+├── data/                       # Data preparation and benchmark splits
 │   ├── prepare.py              #   Dataset loading and collation
 │   ├── prepare_multi.py        #   Extended preprocessing (24-dim x, foil-2 features)
+│   ├── prepare_test.py         #   One-time: generate test_inputs.pt + test_ground_truth.pt
 │   ├── utils.py                #   Visualization utilities
 │   ├── split.py                #   One-time split manifest generator
-│   ├── split_manifest.json     #   Committed train/val indices
+│   ├── split_manifest.json     #   Committed train/val/test indices
 │   └── split_stats.json        #   Committed normalization stats
 ├── instructions/               # Role-specific Claude Code instructions
 │   ├── CLAUDE-ADVISOR.md       #   Advisor workflow
