@@ -120,11 +120,11 @@ python data/split.py --quick
 python k8s/launch.py \
   --tag <research-tag> \
   --wandb_project senpai-v1 \
-  [--n_students 4]
+  [--n_kagglers 4]
 ```
 
 `launch.py` defaults to `--repo_branch main`. Once this branch is merged to main,
-student pods will clone main and get `train.py`, the committed manifest,
+kaggler pods will clone main and get `train.py`, the committed manifest,
 and the stats file automatically.
 
 ---

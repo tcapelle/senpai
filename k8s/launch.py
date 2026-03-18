@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 
-"""Launch senpai advisor and student agents as K8s resources."""
+"""Launch senpai organizer and kaggler agents as K8s resources."""
 
 import subprocess
 import sys
@@ -13,10 +13,10 @@ from pathlib import Path
 
 import simple_parsing as sp
 
-STUDENT_TEMPLATE = Path(__file__).parent / "student-deployment.yaml"
-ADVISOR_TEMPLATE = Path(__file__).parent / "advisor-deployment.yaml"
+KAGGLER_TEMPLATE = Path(__file__).parent / "kaggler-deployment.yaml"
+ORGANIZER_TEMPLATE = Path(__file__).parent / "organizer-deployment.yaml"
 
-STUDENT_NAMES = [
+KAGGLER_NAMES = [
     "frieren", "fern", "tanjiro", "nezuko", "alphonse", "edward",
     "thorfinn", "askeladd", "violet", "gilbert", "senku", "kohaku",
     "emma", "norman", "chihiro", "haku", "shoya", "shouko",
@@ -26,17 +26,17 @@ STUDENT_NAMES = [
 
 @dataclass
 class Args:
-    """Launch senpai advisor and/or student agents on Kubernetes."""
+    """Launch senpai organizer and/or kaggler agents on Kubernetes."""
     tag: str  # research tag (e.g. mar13)
-    names: str = ""  # comma-separated student names (e.g. "frieren,fern")
-    n_students: int = 4  # number of students to launch (ignored if --names is provided)
+    names: str = ""  # comma-separated kaggler names (e.g. "frieren,fern")
+    n_kagglers: int = 4  # number of kagglers to launch (ignored if --names is provided)
     repo_url: str = "https://github.com/wandb/senpai.git"  # git repo URL
     repo_branch: str = "main"  # git branch to clone
-    image: str = "ghcr.io/tcapelle/dev_box:latest"  # container image for students
+    image: str = "ghcr.io/tcapelle/dev_box:latest"  # container image for kagglers
     wandb_entity: str = "wandb-applied-ai-team"  # W&B entity (team or username)
     wandb_project: str = "senpai-v1"  # W&B project name
-    advisor_branch: str = "jurgen"  # branch the advisor works on (PRs target this, not main)
-    advisor: bool = False  # also deploy the advisor pod (default: students only)
+    organizer_branch: str = "jurgen"  # branch the organizer works on (PRs target this, not main)
+    organizer: bool = False  # also deploy the organizer pod (default: kagglers only)
     dry_run: bool = False  # print manifests without applying
 
 
@@ -59,42 +59,42 @@ def render_configmap(name: str, labels: dict[str, str], data: dict[str, str]) ->
     return "\n".join(lines)
 
 
-def render_student(template: str, student_name: str, tag: str, args: Args) -> str:
+def render_kaggler(template: str, kaggler_name: str, tag: str, args: Args) -> str:
     configmap = render_configmap(
-        name=f"senpai-config-student-{student_name}",
-        labels={"app": "senpai", "role": "student", "research-tag": tag},
+        name=f"senpai-config-kaggler-{kaggler_name}",
+        labels={"app": "senpai", "role": "kaggler", "research-tag": tag},
         data={
             "REPO_URL": args.repo_url,
             "REPO_BRANCH": args.repo_branch,
-            "STUDENT_NAME": student_name,
+            "KAGGLER_NAME": kaggler_name,
             "RESEARCH_TAG": tag,
             "WANDB_ENTITY": args.wandb_entity,
             "WANDB_PROJECT": args.wandb_project,
-            "ADVISOR_BRANCH": args.advisor_branch,
+            "ORGANIZER_BRANCH": args.organizer_branch,
             "WANDB_MODE": "online",
         },
     )
     deployment = render_template(template, {
-        "STUDENT_NAME": student_name,
+        "KAGGLER_NAME": kaggler_name,
         "RESEARCH_TAG": tag,
         "IMAGE": args.image,
-        "ADVISOR_BRANCH": args.advisor_branch,
+        "ORGANIZER_BRANCH": args.organizer_branch,
     })
     return configmap + "\n---\n" + deployment
 
 
-def render_advisor(template: str, tag: str, student_list: list[str], args: Args) -> str:
+def render_organizer(template: str, tag: str, kaggler_list: list[str], args: Args) -> str:
     configmap = render_configmap(
-        name="senpai-config-advisor",
-        labels={"app": "senpai", "role": "advisor", "research-tag": tag},
+        name="senpai-config-organizer",
+        labels={"app": "senpai", "role": "organizer", "research-tag": tag},
         data={
             "REPO_URL": args.repo_url,
             "REPO_BRANCH": args.repo_branch,
             "RESEARCH_TAG": tag,
-            "STUDENT_NAMES": ",".join(student_list),
+            "KAGGLER_NAMES": ",".join(kaggler_list),
             "WANDB_ENTITY": args.wandb_entity,
             "WANDB_PROJECT": args.wandb_project,
-            "ADVISOR_BRANCH": args.advisor_branch,
+            "ORGANIZER_BRANCH": args.organizer_branch,
         },
     )
     deployment = render_template(template, {"RESEARCH_TAG": tag})
@@ -119,46 +119,46 @@ def kubectl_apply(manifest: str, name: str):
 def main():
     args = sp.parse(Args)
 
-    # Resolve student list
+    # Resolve kaggler list
     if args.names:
-        student_list = [n.strip() for n in args.names.split(",")]
+        kaggler_list = [n.strip() for n in args.names.split(",")]
     else:
-        if args.n_students > len(STUDENT_NAMES):
-            print(f"ERROR: max {len(STUDENT_NAMES)} students (got {args.n_students})", file=sys.stderr)
+        if args.n_kagglers > len(KAGGLER_NAMES):
+            print(f"ERROR: max {len(KAGGLER_NAMES)} kagglers (got {args.n_kagglers})", file=sys.stderr)
             sys.exit(1)
-        student_list = STUDENT_NAMES[:args.n_students]
+        kaggler_list = KAGGLER_NAMES[:args.n_kagglers]
 
-    student_template = STUDENT_TEMPLATE.read_text()
-    advisor_template = ADVISOR_TEMPLATE.read_text()
+    kaggler_template = KAGGLER_TEMPLATE.read_text()
+    organizer_template = ORGANIZER_TEMPLATE.read_text()
 
-    # --- Deploy students ---
-    for name in student_list:
-        manifest = render_student(student_template, name, args.tag, args)
+    # --- Deploy kagglers ---
+    for name in kaggler_list:
+        manifest = render_kaggler(kaggler_template, name, args.tag, args)
         if args.dry_run:
-            print(f"--- Student: {name} ---")
+            print(f"--- Kaggler: {name} ---")
             print(manifest)
             print()
         else:
-            kubectl_apply(manifest, f"student {name}")
+            kubectl_apply(manifest, f"kaggler {name}")
 
-    # --- Deploy advisor ---
-    if args.advisor:
-        manifest = render_advisor(advisor_template, args.tag, student_list, args)
+    # --- Deploy organizer ---
+    if args.organizer:
+        manifest = render_organizer(organizer_template, args.tag, kaggler_list, args)
         if args.dry_run:
-            print("--- Advisor ---")
+            print("--- Organizer ---")
             print(manifest)
             print()
         else:
-            kubectl_apply(manifest, "advisor")
+            kubectl_apply(manifest, "organizer")
 
     if not args.dry_run:
-        print(f"\nLaunched {len(student_list)} students: {', '.join(student_list)}")
-        if args.advisor:
-            print("Launched advisor pod")
+        print(f"\nLaunched {len(kaggler_list)} kagglers: {', '.join(kaggler_list)}")
+        if args.organizer:
+            print("Launched organizer pod")
         print(f"\nMonitor:")
         print(f"  kubectl get deployments -l research-tag={args.tag}")
-        print(f"  kubectl get deployment senpai-advisor")
-        print(f"  kubectl logs -f deployment/senpai-{student_list[0]}")
+        print(f"  kubectl get deployment senpai-organizer")
+        print(f"  kubectl logs -f deployment/senpai-{kaggler_list[0]}")
         print(f"\nStop:")
         print(f"  kubectl delete deployments,configmaps -l research-tag={args.tag}")
 

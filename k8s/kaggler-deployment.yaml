@@ -2,34 +2,36 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 #
-# The advisor: a lightweight deployment (no GPU) that runs Claude Code
-# to manage research hypotheses via GitHub PRs. Loops every 5 minutes.
+# A kaggler is a long-running worker that polls for PR assignments.
+# Replace {{KAGGLER_NAME}} and {{RESEARCH_TAG}} before applying, or use launch.py.
 
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: senpai-advisor
+  name: senpai-{{KAGGLER_NAME}}
   labels:
     app: senpai
-    role: advisor
+    role: kaggler
     research-tag: {{RESEARCH_TAG}}
 spec:
   replicas: 1
+  strategy:
+    type: Recreate
   selector:
     matchLabels:
       app: senpai
-      role: advisor
+      kaggler: {{KAGGLER_NAME}}
   template:
     metadata:
       labels:
         app: senpai
-        role: advisor
+        role: kaggler
+        kaggler: {{KAGGLER_NAME}}
         research-tag: {{RESEARCH_TAG}}
     spec:
-      serviceAccountName: senpai-orchestrator
       containers:
-      - name: advisor
-        image: ghcr.io/tcapelle/dev_box:latest
+      - name: kaggler
+        image: {{IMAGE}}
         command: ["/bin/bash", "-c"]
         args:
         - |
@@ -37,10 +39,10 @@ spec:
           git config --global url."https://${GITHUB_TOKEN}@github.com/".insteadOf "https://github.com/"
           git clone --branch "$REPO_BRANCH" "$REPO_URL" /workspace/senpai
           cd /workspace/senpai
-          bash k8s/entrypoint-advisor.sh
+          bash k8s/entrypoint-kaggler.sh
         envFrom:
         - configMapRef:
-            name: senpai-config-advisor
+            name: senpai-config-kaggler-{{KAGGLER_NAME}}
         env:
         - name: WANDB_API_KEY
           valueFrom:
@@ -59,15 +61,27 @@ spec:
               key: github-token
         resources:
           requests:
-            cpu: "4"
-            memory: "8Gi"
+            cpu: "120"
+            memory: "960Gi"
+            nvidia.com/gpu: "8"
           limits:
-            cpu: "8"
-            memory: "16Gi"
+            cpu: "120"
+            memory: "960Gi"
+            nvidia.com/gpu: "8"
         volumeMounts:
+        - name: dshm
+          mountPath: /dev/shm
         - name: dataset
           mountPath: /mnt/new-pvc
       volumes:
+      - name: dshm
+        emptyDir:
+          medium: Memory
+          sizeLimit: 32Gi
       - name: dataset
         persistentVolumeClaim:
           claimName: new-pvc
+      tolerations:
+      - key: "nvidia.com/gpu"
+        operator: "Exists"
+        effect: "NoSchedule"

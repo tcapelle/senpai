@@ -2,9 +2,9 @@
 # SPDX-License-Identifier: Apache-2.0
 # SPDX-PackageName: senpai
 
-"""Score student predictions against hidden ground truth.
+"""Score kaggler predictions against hidden ground truth.
 
-Advisor-only script. Computes per-domain and overall MAE for surface
+Organizer-only script. Computes per-domain and overall MAE for surface
 and volume nodes across all test samples.
 
 Run:
@@ -20,7 +20,7 @@ import torch
 @dataclass
 class ScoreConfig:
     """Score predictions against hidden test ground truth."""
-    predictions: str                 # path to student's predictions.pt
+    predictions: str                 # path to kaggler's predictions.pt
     ground_truth: str = "/mnt/new-pvc/datasets/tandemfoil/.test_gt/test_ground_truth.pt"
     output_format: str = "markdown"  # "markdown" or "json"
 

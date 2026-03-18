@@ -5,8 +5,8 @@
 """One-time offline script: generate test input and ground truth files.
 
 Reads the split manifest (with test indices and test_meta) and produces:
-  test_inputs.pt         — shared storage, visible to students (no y values)
-  test_ground_truth.pt   — advisor-only (hidden y values + domain tags)
+  test_inputs.pt         — shared storage, visible to kagglers (no y values)
+  test_ground_truth.pt   — organizer-only (hidden y values + domain tags)
 
 Samples are shuffled with a fixed seed so ordering doesn't reveal source.
 

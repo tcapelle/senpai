@@ -20,7 +20,7 @@ The model is a [Transolver](https://arxiv.org/abs/2402.02366) with physics-aware
 
 ## How it works
 
-An **advisor** agent (no GPU) creates hypothesis PRs with detailed instructions and assigns them to **student** agents (GPU nodes). Students implement, run experiments, and report results on the PR. The advisor reviews: merge winners, iterate on promising ideas, close dead ends. Coordination uses GitHub labels (`<advisor-name>`, `student:<name>`, `status:wip`, `status:review`). W&B tracks metrics.
+An **organizer** agent (no GPU) creates hypothesis PRs with detailed instructions and assigns them to **kaggler** agents (GPU nodes). Kagglers implement, run experiments, and report results on the PR. The organizer reviews: merge winners, iterate on promising ideas, close dead ends. Coordination uses GitHub labels (`<organizer-name>`, `kaggler:<name>`, `status:wip`, `status:review`). W&B tracks metrics.
 
 ## Architecture
 
@@ -29,14 +29,14 @@ An **advisor** agent (no GPU) creates hypothesis PRs with detailed instructions 
 ```mermaid
 graph TD
     subgraph K8s["Kubernetes Cluster"]
-        A["Advisor Pod<br/>(Claude Code, no GPU)<br/>Creates hypothesis PRs<br/>Reviews results, merges/closes"]
-        subgraph Students["Student Deployments (one per GPU node)"]
+        A["Organizer Pod<br/>(Claude Code, no GPU)<br/>Creates hypothesis PRs<br/>Reviews results, merges/closes"]
+        subgraph Kagglers["Kaggler Deployments (one per GPU node)"]
             S1["frieren<br/>8x GPU"]
             S2["fern<br/>8x GPU"]
             S3["tanjiro<br/>8x GPU"]
             S4["..."]
         end
-        A -->|"GitHub PRs<br/>(draft → review → merge/close)"| Students
+        A -->|"GitHub PRs<br/>(draft → review → merge/close)"| Kagglers
     end
     K8s --> GH["GitHub<br/>PRs = hypotheses<br/>Labels = routing"]
     K8s --> WB["Weights & Biases<br/>Metrics, runs, groups"]
@@ -46,40 +46,40 @@ graph TD
 
 ```mermaid
 graph TD
-    A["Advisor creates draft PR"] -->|"student:name + status:wip"| B["Student picks up PR"]
+    A["Organizer creates draft PR"] -->|"kaggler:name + status:wip"| B["Kaggler picks up PR"]
     B --> C["Implements hypothesis, runs experiments"]
-    C -->|"status:review"| D["Advisor reviews"]
-    D -->|Merge| E["Improvement lands on advisor branch"]
-    D -->|Request changes| F["status:wip — student iterates"]
+    C -->|"status:review"| D["Organizer reviews"]
+    D -->|Merge| E["Improvement lands on organizer branch"]
+    D -->|Request changes| F["status:wip — kaggler iterates"]
     D -->|Close| G["Dead end, branch deleted"]
     F --> B
 ```
 
 ## Competition
 
-Models are evaluated Kaggle-style on a hidden test set (~810 samples, 30% of the data). Students train on the public train/val splits, then run `predict.py` to generate predictions on test inputs (saved to PVC). The advisor scores predictions against hidden ground truth with `score.py` and updates `LEADERBOARD.md`.
+Models are evaluated Kaggle-style on a hidden test set (~810 samples, 30% of the data). Kagglers train on the public train/val splits, then run `predict.py` to generate predictions on test inputs (saved to PVC). The organizer scores predictions against hidden ground truth with `score.py` and updates `LEADERBOARD.md`.
 
-- **Public val** — students see metrics during training for self-assessment
-- **Private test** — scored only by the advisor, ranked by `mae_surf_p`
-- Ground truth lives at `/mnt/new-pvc/datasets/tandemfoil/.test_gt/` (advisor-only)
-- Predictions live at `/mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt`
+- **Public val** — kagglers see metrics during training for self-assessment
+- **Private test** — scored only by the organizer, ranked by `mae_surf_p`
+- Ground truth lives at `/mnt/new-pvc/datasets/tandemfoil/.test_gt/` (organizer-only)
+- Predictions live at `/mnt/new-pvc/predictions/<kaggler>/<run-id>/predictions.pt`
 
 ```bash
-# Student: generate predictions after training
+# Kaggler: generate predictions after training
 python predict.py --checkpoint models/model-<id>/checkpoint.pt --agent <name>
 
-# Advisor: score predictions
-python score.py --predictions /mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt
+# Organizer: score predictions
+python score.py --predictions /mnt/new-pvc/predictions/<kaggler>/<run-id>/predictions.pt
 ```
 
 ## Repo layout
 
 ```
 senpai/
-├── train.py                    # Training script + Transolver model (students modify this)
-├── predict.py                  # Test set inference (students run after training)
-├── score.py                    # Score predictions vs hidden GT (advisor only)
-├── LEADERBOARD.md              # Competition leaderboard (maintained by advisor)
+├── train.py                    # Training script + Transolver model (kagglers modify this)
+├── predict.py                  # Test set inference (kagglers run after training)
+├── score.py                    # Score predictions vs hidden GT (organizer only)
+├── LEADERBOARD.md              # Competition leaderboard (maintained by organizer)
 ├── program.md                  # Research context, metrics, constraints
 ├── data/                       # Data preparation and benchmark splits
 │   ├── prepare.py              #   Dataset loading and collation
@@ -90,19 +90,19 @@ senpai/
 │   ├── split_manifest.json     #   Committed train/val/test indices
 │   └── split_stats.json        #   Committed normalization stats
 ├── instructions/               # Role-specific Claude Code instructions
-│   ├── CLAUDE-ADVISOR.md       #   Advisor workflow
-│   ├── CLAUDE-STUDENT.md       #   Student workflow
-│   ├── prompt-advisor.md       #   Advisor prompt template
-│   └── prompt-student.md       #   Student prompt template
+│   ├── CLAUDE-ORGANIZER.md       #   Organizer workflow
+│   ├── CLAUDE-KAGGLER.md       #   Kaggler workflow
+│   ├── prompt-organizer.md       #   Organizer prompt template
+│   └── prompt-kaggler.md       #   Kaggler prompt template
 ├── k8s/                        # Kubernetes deployment
-│   ├── launch.py               #   Deploy advisor + student pods
-│   ├── advisor-deployment.yaml #   Advisor pod spec (CPU only)
-│   ├── student-deployment.yaml #   Student pod spec (8x GPU)
-│   ├── entrypoint-advisor.sh   #   Advisor startup script
-│   └── entrypoint-student.sh   #   Student startup script
+│   ├── launch.py               #   Deploy organizer + kaggler pods
+│   ├── organizer-deployment.yaml #   Organizer pod spec (CPU only)
+│   ├── kaggler-deployment.yaml #   Kaggler pod spec (8x GPU)
+│   ├── entrypoint-organizer.sh   #   Organizer startup script
+│   └── entrypoint-kaggler.sh   #   Kaggler startup script
 └── .claude/skills/             # Claude Code skills
     ├── wandb-primary/          #   W&B + Weave queries
-    └── list-experiments/       #   Experiment history (advisor only)
+    └── list-experiments/       #   Experiment history (organizer only)
 ```
 
 ## Running
@@ -115,7 +115,7 @@ python train.py --agent <name> --wandb_name "<name>/<description>"
 python train.py --debug
 
 # Deploy to k8s
-python k8s/launch.py --tag <research-tag> --n_students 4 --advisor
+python k8s/launch.py --tag <research-tag> --n_kagglers 4 --organizer
 ```
 
 ## References

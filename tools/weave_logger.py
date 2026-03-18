@@ -151,7 +151,7 @@ def process_session_file(session_file: Path, state: dict, agent_name: str, role:
 
 def main() -> None:
     p = argparse.ArgumentParser(description="Weave trace logger daemon for senpai Claude Code agents")
-    p.add_argument("--role", required=True, choices=["advisor", "student"])
+    p.add_argument("--role", required=True, choices=["organizer", "kaggler"])
     p.add_argument("--agent-name", required=True)
     p.add_argument("--workdir", default="/workspace/senpai")
     p.add_argument("--project-dir", default=None, help="Override ~/.claude/projects/<hash>/ path")

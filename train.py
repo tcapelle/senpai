@@ -42,7 +42,7 @@ from data.prepare_multi import X_DIM, pad_collate, load_data, VAL_SPLIT_NAMES
 
 
 # ---------------------------------------------------------------------------
-# Transolver model (inlined so students can
+# Transolver model (inlined so kagglers can
 # modify architecture and training script in a single file)
 # ---------------------------------------------------------------------------
 

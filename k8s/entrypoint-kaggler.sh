@@ -9,7 +9,7 @@ set -o pipefail
 
 WORKDIR="/workspace/senpai"
 
-echo "=== Senpai Student: $STUDENT_NAME ==="
+echo "=== Senpai Kaggler: $KAGGLER_NAME ==="
 echo "Repo:   $REPO_URL (branch: $REPO_BRANCH)"
 echo "GPUs:   $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | wc -l) x $(nvidia-smi --query-gpu=name --format=csv,noheader 2>/dev/null | head -1)"
 
@@ -18,8 +18,8 @@ cd "$WORKDIR"
 uv pip install --system -e .
 
 # --- Git identity for commits ---
-git config user.name "senpai-$STUDENT_NAME"
-git config user.email "senpai-$STUDENT_NAME@senpai"
+git config user.name "senpai-$KAGGLER_NAME"
+git config user.email "senpai-$KAGGLER_NAME@senpai"
 
 # --- Install Claude Code ---
 curl -fsSL https://claude.ai/install.sh | bash
@@ -34,29 +34,29 @@ apt-get update && apt-get install -y gh
 echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Install role instructions ---
-cp instructions/CLAUDE-STUDENT.md "$WORKDIR/CLAUDE.md"
+cp instructions/CLAUDE-KAGGLER.md "$WORKDIR/CLAUDE.md"
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
 
 PROMPT="$(eval "cat <<_PROMPT_EOF_
-$(cat "$WORKDIR/instructions/prompt-student.md")
+$(cat "$WORKDIR/instructions/prompt-kaggler.md")
 _PROMPT_EOF_")"
 
 # --- Start Weave thread logger in background ---
-python3 "$WORKDIR/tools/weave_logger.py" --role student --agent-name "$STUDENT_NAME" --workdir "$WORKDIR" &
+python3 "$WORKDIR/tools/weave_logger.py" --role kaggler --agent-name "$KAGGLER_NAME" --workdir "$WORKDIR" &
 
 ITERATION=0
 while true; do
     ITERATION=$((ITERATION + 1))
     echo "=== Ralph Loop iteration $ITERATION ($(date)) ==="
 
-    # Return to latest advisor branch so student starts from the current baseline
-    git checkout "$ADVISOR_BRANCH" 2>/dev/null || true
-    git pull origin "$ADVISOR_BRANCH" 2>/dev/null || true
+    # Return to latest organizer branch so kaggler starts from the current baseline
+    git checkout "$ORGANIZER_BRANCH" 2>/dev/null || true
+    git pull origin "$ORGANIZER_BRANCH" 2>/dev/null || true
 
     # Restore CLAUDE.md — branch checkouts clobber it
-    cp "$WORKDIR/instructions/CLAUDE-STUDENT.md" "$WORKDIR/CLAUDE.md"
+    cp "$WORKDIR/instructions/CLAUDE-KAGGLER.md" "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
         claude -p "$PROMPT" --dangerously-skip-permissions || true

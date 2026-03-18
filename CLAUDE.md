@@ -24,22 +24,22 @@ When asked for a large piece of work which seems vague or needs clarification, p
 ## Key docs
 
 - `program.md` — research context, goals, metrics, file constraints
-- `instructions/CLAUDE-ADVISOR.md` — advisor role workflow
-- `instructions/CLAUDE-STUDENT.md` — student role workflow
+- `instructions/CLAUDE-ORGANIZER.md` — organizer role workflow
+- `instructions/CLAUDE-KAGGLER.md` — kaggler role workflow
 
 ## Architecture
 
-- **Advisor pod** — no GPU, runs Claude Code in a loop. Queries W&B, reviews student PRs, generates new hypotheses, and creates draft PRs to assign work.
-- **Student pods** — GPU workers, each running Claude Code. Poll for assigned PRs, implement the hypothesis, run training, report results.
+- **Organizer pod** — no GPU, runs Claude Code in a loop. Queries W&B, reviews kaggler PRs, generates new hypotheses, and creates draft PRs to assign work.
+- **Kaggler pods** — GPU workers, each running Claude Code. Poll for assigned PRs, implement the hypothesis, run training, report results.
 
 ## k8s layout
 
-- `k8s/advisor-deployment.yaml` / `k8s/student-deployment.yaml` — pod specs
-- `k8s/entrypoint-advisor.sh` / `k8s/entrypoint-student.sh` — startup scripts
+- `k8s/organizer-deployment.yaml` / `k8s/kaggler-deployment.yaml` — pod specs
+- `k8s/entrypoint-organizer.sh` / `k8s/entrypoint-kaggler.sh` — startup scripts
 - `k8s/launch.py` — helper to template and apply deployments
 
 ## instructions/
 
-Role-specific CLAUDE.md files. The Student and Advisor both use Claude Code. At pod launch, the appropriate role-specific file is copied over this CLAUDE.md:
-- `instructions/CLAUDE-ADVISOR.md` → advisor pods
-- `instructions/CLAUDE-STUDENT.md` → student pods
+Role-specific CLAUDE.md files. The Kaggler and Organizer both use Claude Code. At pod launch, the appropriate role-specific file is copied over this CLAUDE.md:
+- `instructions/CLAUDE-ORGANIZER.md` → organizer pods
+- `instructions/CLAUDE-KAGGLER.md` → kaggler pods

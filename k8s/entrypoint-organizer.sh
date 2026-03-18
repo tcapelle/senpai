@@ -9,31 +9,31 @@ set -o pipefail
 
 WORKDIR="/workspace/senpai"
 
-echo "=== Senpai Advisor ==="
+echo "=== Senpai Organizer ==="
 echo "Repo:     $REPO_URL (branch: $REPO_BRANCH)"
 echo "Tag:      $RESEARCH_TAG"
-echo "Students: $STUDENT_NAMES"
+echo "Kagglers: $KAGGLER_NAMES"
 
 # Repo already cloned by the deployment args block
 cd "$WORKDIR"
 
 # --- Install role instructions ---
-cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" "$WORKDIR/CLAUDE.md"
+cp "$WORKDIR/instructions/CLAUDE-ORGANIZER.md" "$WORKDIR/CLAUDE.md"
 
 uv pip install --system -e .
 
 # --- Git identity ---
-git config user.name "senpai-advisor"
-git config user.email "senpai-advisor@senpai"
+git config user.name "senpai-organizer"
+git config user.email "senpai-organizer@senpai"
 
-# --- Create or checkout advisor branch ---
+# --- Create or checkout organizer branch ---
 git fetch origin
-if git rev-parse --verify "origin/$ADVISOR_BRANCH" >/dev/null 2>&1; then
-    git checkout "$ADVISOR_BRANCH"
-    git pull origin "$ADVISOR_BRANCH"
+if git rev-parse --verify "origin/$ORGANIZER_BRANCH" >/dev/null 2>&1; then
+    git checkout "$ORGANIZER_BRANCH"
+    git pull origin "$ORGANIZER_BRANCH"
 else
-    git checkout -b "$ADVISOR_BRANCH"
-    git push -u origin "$ADVISOR_BRANCH"
+    git checkout -b "$ORGANIZER_BRANCH"
+    git push -u origin "$ORGANIZER_BRANCH"
 fi
 
 # --- Install Claude Code ---
@@ -54,27 +54,27 @@ echo "=== gh auth ready (using GITHUB_TOKEN env var) ==="
 
 # --- Build prompt (bash heredoc expansion — no envsubst needed) ---
 PROMPT="$(eval "cat <<_PROMPT_EOF_
-$(cat "$WORKDIR/instructions/prompt-advisor.md")
+$(cat "$WORKDIR/instructions/prompt-organizer.md")
 _PROMPT_EOF_")"
 
 # --- Launch Claude Code in Ralph Loop ---
 export IS_SANDBOX=1
 
-LOGDIR="/workspace/senpai/advisor_logs"
+LOGDIR="/workspace/senpai/organizer_logs"
 mkdir -p "$LOGDIR"
 
 # --- Start Weave thread logger in background ---
-python3 "$WORKDIR/tools/weave_logger.py" --role advisor --agent-name advisor --workdir "$WORKDIR" &
+python3 "$WORKDIR/tools/weave_logger.py" --role organizer --agent-name organizer --workdir "$WORKDIR" &
 
 ITERATION=0
 while true; do
     ITERATION=$((ITERATION + 1))
     LOGFILE="$LOGDIR/iteration_${ITERATION}_$(date +%Y%m%d_%H%M%S).jsonl"
-    echo "=== Advisor Loop iteration $ITERATION ($(date)) ==="
+    echo "=== Organizer Loop iteration $ITERATION ($(date)) ==="
     echo "=== Log: $LOGFILE ==="
 
     # Restore CLAUDE.md — branch checkouts clobber it
-    cp "$WORKDIR/instructions/CLAUDE-ADVISOR.md" "$WORKDIR/CLAUDE.md"
+    cp "$WORKDIR/instructions/CLAUDE-ORGANIZER.md" "$WORKDIR/CLAUDE.md"
 
     if [ "$ITERATION" -eq 1 ]; then
         claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
@@ -83,6 +83,6 @@ while true; do
         claude -p "$PROMPT" --model "claude-opus-4-6[1m]" --output-format stream-json --verbose --dangerously-skip-permissions > "$LOGFILE" 2>&1 || true
     fi
 
-    echo "=== Advisor exited at $(date), next check in 5 minutes ==="
+    echo "=== Organizer exited at $(date), next check in 5 minutes ==="
     sleep 300
 done

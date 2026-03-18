@@ -32,7 +32,7 @@ class PredictConfig:
     checkpoint: str                # path to best model checkpoint
     test_inputs: str = "/mnt/new-pvc/datasets/tandemfoil/test_inputs.pt"
     stats_file: str = "data/split_stats.json"
-    agent: str | None = None       # student name — used for output path
+    agent: str | None = None       # kaggler name — used for output path
     batch_size: int = 4
 
 

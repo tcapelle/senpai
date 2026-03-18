@@ -9,7 +9,7 @@ Produces two committed JSON files used by train.py:
   split_stats.json     — x/y normalization stats over training set only
 
 The 30% of each source excluded by SAMPLE_FRACTION forms the hidden test split,
-used for Kaggle-style competition scoring (advisor-only ground truth).
+used for Kaggle-style competition scoring (organizer-only ground truth).
 
 Run: python data/split.py
 
