@@ -174,7 +174,10 @@ class TransolverBlock(nn.Module):
         )
         self.ln_2 = nn.LayerNorm(hidden_dim)
         self.mlp = MLP(hidden_dim, hidden_dim * mlp_ratio, hidden_dim, n_layers=0, res=False, act=act)
-        self.spatial_bias = nn.Sequential(nn.Linear(2, 32), nn.GELU(), nn.Linear(32, slice_num))
+        self.n_freq = 4
+        n_freq = 4
+        spatial_in = 2 + 2 * 2 * n_freq  # 2 raw + 16 sin/cos = 18
+        self.spatial_bias = nn.Sequential(nn.Linear(spatial_in, 32), nn.GELU(), nn.Linear(32, slice_num))
         self.ln_1_post = nn.LayerNorm(hidden_dim)
         self.ln_2_post = nn.LayerNorm(hidden_dim)
         self.se_fc1 = nn.Linear(hidden_dim, hidden_dim // 4)
@@ -190,7 +193,13 @@ class TransolverBlock(nn.Module):
             )
 
     def forward(self, fx, raw_xy=None):
-        sb = self.spatial_bias(raw_xy) if raw_xy is not None else None
+        if raw_xy is not None:
+            freqs = 2.0 ** torch.arange(self.n_freq, device=raw_xy.device, dtype=raw_xy.dtype)  # [4]
+            xy_scaled = raw_xy.unsqueeze(-1) * freqs  # [B, N, 2, 4]
+            pe = torch.cat([raw_xy, xy_scaled.sin().flatten(-2), xy_scaled.cos().flatten(-2)], dim=-1)  # [B, N, 18]
+            sb = self.spatial_bias(pe)
+        else:
+            sb = None
         fx = self.ln_1_post(self.attn(self.ln_1(fx), spatial_bias=sb) + fx)
         fx = self.ln_2_post(self.mlp(self.ln_2(fx)) + fx)
         se = fx.mean(dim=1, keepdim=True)
