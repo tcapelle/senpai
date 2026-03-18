@@ -174,10 +174,7 @@ class TransolverBlock(nn.Module):
         )
         self.ln_2 = nn.LayerNorm(hidden_dim)
         self.mlp = MLP(hidden_dim, hidden_dim * mlp_ratio, hidden_dim, n_layers=0, res=False, act=act)
-        self.n_freq = 4
-        n_freq = 4
-        spatial_in = 2 + 2 * 2 * n_freq  # 2 raw + 16 sin/cos = 18
-        self.spatial_bias = nn.Sequential(nn.Linear(spatial_in, 32), nn.GELU(), nn.Linear(32, slice_num))
+        self.spatial_bias = nn.Sequential(nn.Linear(2, 32), nn.GELU(), nn.Linear(32, slice_num))
         self.ln_1_post = nn.LayerNorm(hidden_dim)
         self.ln_2_post = nn.LayerNorm(hidden_dim)
         self.se_fc1 = nn.Linear(hidden_dim, hidden_dim // 4)
@@ -193,13 +190,7 @@ class TransolverBlock(nn.Module):
             )
 
     def forward(self, fx, raw_xy=None):
-        if raw_xy is not None:
-            freqs = 2.0 ** torch.arange(self.n_freq, device=raw_xy.device, dtype=raw_xy.dtype)  # [4]
-            xy_scaled = raw_xy.unsqueeze(-1) * freqs  # [B, N, 2, 4]
-            pe = torch.cat([raw_xy, xy_scaled.sin().flatten(-2), xy_scaled.cos().flatten(-2)], dim=-1)  # [B, N, 18]
-            sb = self.spatial_bias(pe)
-        else:
-            sb = None
+        sb = self.spatial_bias(raw_xy) if raw_xy is not None else None
         fx = self.ln_1_post(self.attn(self.ln_1(fx), spatial_bias=sb) + fx)
         fx = self.ln_2_post(self.mlp(self.ln_2(fx)) + fx)
         se = fx.mean(dim=1, keepdim=True)
@@ -470,7 +461,7 @@ print(f"  Cp stats — mean: {_pmean.tolist()}, std: {_pstd.tolist()}")
 
 model_config = dict(
     space_dim=2,
-    fun_dim=X_DIM - 2 + 1,  # X_DIM=24 + 1 curvature proxy; fun_dim + space_dim must equal x.shape[-1]
+    fun_dim=X_DIM - 2 + 1 + 16,  # X_DIM=24 + 1 curvature proxy + 16 Fourier PE; fun_dim + space_dim must equal x.shape[-1]
     out_dim=3,
     n_hidden=128,
     n_layers=1,       # was 2 — 1 layer for maximum epochs in 30 min
@@ -600,6 +591,12 @@ for epoch in range(MAX_EPOCHS):
         # Curvature proxy: norm of first 4 dsdf channels (gradient magnitude) for surface nodes
         curv = x[:, :, 2:6].norm(dim=-1, keepdim=True) * is_surface.float().unsqueeze(-1)
         x = torch.cat([x, curv], dim=-1)
+        # Fourier positional encoding: append sin/cos of (x,y) at 4 frequencies
+        raw_xy = x[:, :, :2]
+        freqs = 2.0 ** torch.arange(4, device=x.device, dtype=x.dtype)
+        xy_scaled = raw_xy.unsqueeze(-1) * freqs  # [B, N, 2, 4]
+        fourier_pe = torch.cat([xy_scaled.sin().flatten(-2), xy_scaled.cos().flatten(-2)], dim=-1)  # [B, N, 16]
+        x = torch.cat([x, fourier_pe], dim=-1)
         Umag, q = _umag_q(y, mask)
         y_phys = _phys_norm(y, Umag, q)
         y_norm = (y_phys - phys_stats["y_mean"]) / phys_stats["y_std"]
@@ -733,6 +730,12 @@ for epoch in range(MAX_EPOCHS):
                 # Curvature proxy: norm of first 4 dsdf channels (gradient magnitude) for surface nodes
                 curv = x[:, :, 2:6].norm(dim=-1, keepdim=True) * is_surface.float().unsqueeze(-1)
                 x = torch.cat([x, curv], dim=-1)
+                # Fourier positional encoding: append sin/cos of (x,y) at 4 frequencies
+                raw_xy = x[:, :, :2]
+                freqs = 2.0 ** torch.arange(4, device=x.device, dtype=x.dtype)
+                xy_scaled = raw_xy.unsqueeze(-1) * freqs  # [B, N, 2, 4]
+                fourier_pe = torch.cat([xy_scaled.sin().flatten(-2), xy_scaled.cos().flatten(-2)], dim=-1)  # [B, N, 16]
+                x = torch.cat([x, fourier_pe], dim=-1)
                 Umag, q = _umag_q(y, mask)
                 y_phys = _phys_norm(y, Umag, q)
                 y_norm = (y_phys - phys_stats["y_mean"]) / phys_stats["y_std"]
