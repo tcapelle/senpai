@@ -787,12 +787,18 @@ for epoch in range(MAX_EPOCHS):
         }
         val_loss_sum += split_loss
 
-    # val/loss = mean across finite splits; NaN-robust for checkpoint selection
-    finite_losses = [val_metrics_per_split[name][f"{name}/loss"]
-                     for name in VAL_SPLIT_NAMES
-                     if not (torch.tensor(val_metrics_per_split[name][f"{name}/loss"]).isnan() or
-                             torch.tensor(val_metrics_per_split[name][f"{name}/loss"]).isinf())]
-    mean_val_loss = sum(finite_losses) / max(len(finite_losses), 1)
+    # 3-split val/loss (in_dist + tandem + ood_cond) — used for checkpoint selection
+    _3split_names = ["val_in_dist", "val_tandem_transfer", "val_ood_cond"]
+    _3split_losses = [val_metrics_per_split[n][f"{n}/loss"] for n in _3split_names
+                      if not (torch.tensor(val_metrics_per_split[n][f"{n}/loss"]).isnan() or
+                              torch.tensor(val_metrics_per_split[n][f"{n}/loss"]).isinf())]
+    val_loss_3split = sum(_3split_losses) / max(len(_3split_losses), 1)
+
+    # 4-split val/loss (all splits including ood_re)
+    _4split_losses = [val_metrics_per_split[n][f"{n}/loss"] for n in VAL_SPLIT_NAMES
+                      if not (torch.tensor(val_metrics_per_split[n][f"{n}/loss"]).isnan() or
+                              torch.tensor(val_metrics_per_split[n][f"{n}/loss"]).isinf())]
+    val_loss_4split = sum(_4split_losses) / max(len(_4split_losses), 1)
 
     dt = time.time() - t0
 
@@ -800,7 +806,9 @@ for epoch in range(MAX_EPOCHS):
     metrics = {
         "train/vol_loss": epoch_vol,
         "train/surf_loss": epoch_surf,
-        "val/loss": mean_val_loss,
+        "val/loss": val_loss_3split,
+        "val/loss_3split": val_loss_3split,
+        "val/loss_4split": val_loss_4split,
         "lr": scheduler.get_last_lr()[0],
         "epoch_time_s": dt,
     }
@@ -815,9 +823,9 @@ for epoch in range(MAX_EPOCHS):
         peak_mem_gb = 0.0
 
     tag = ""
-    if mean_val_loss < best_val:
-        best_val = mean_val_loss
-        best_metrics = {"epoch": epoch + 1, "val_loss": mean_val_loss}
+    if val_loss_3split < best_val:
+        best_val = val_loss_3split
+        best_metrics = {"epoch": epoch + 1, "val_loss": val_loss_3split}
         for split_metrics in val_metrics_per_split.values():
             for k, v in split_metrics.items():
                 best_metrics[f"best_{k}"] = v
