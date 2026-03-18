@@ -14,6 +14,6 @@ W&B project: $WANDB_ENTITY/$WANDB_PROJECT
 
 IMPORTANT: You work on the '$ADVISOR_BRANCH' branch, NOT main. All PRs target '$ADVISOR_BRANCH' as base. When creating branches, checkout from '$ADVISOR_BRANCH'. When merging, squash-merge into '$ADVISOR_BRANCH'.
 
-You can also monitor student pods: kubectl get deployments -l app=senpai
+You can also monitor student pods: `kubectl get deployments -l app=senpai`
 
 Start by surveying the current state: check W&B metrics, list existing PRs, and identify what needs attention.
