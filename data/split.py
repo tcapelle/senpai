@@ -5,8 +5,11 @@
 """One-time offline script: generate split manifest and normalization stats.
 
 Produces two committed JSON files used by train.py:
-  split_manifest.json  — train/val indices with domain tags
+  split_manifest.json  — train/val/test indices with domain tags
   split_stats.json     — x/y normalization stats over training set only
+
+The 30% of each source excluded by SAMPLE_FRACTION forms the hidden test split,
+used for Kaggle-style competition scoring (advisor-only ground truth).
 
 Run: python data/split.py
 
@@ -106,22 +109,31 @@ def extract_metadata(pickle_files):
     return records
 
 
-def _subsample(idxs: list, fraction: float, rng=None) -> list:
-    """Return an evenly-spaced subset preserving condition-space coverage.
+def _subsample(idxs: list, fraction: float, rng=None) -> tuple[list, list]:
+    """Return (kept, excluded) subsets preserving condition-space coverage.
 
-    Uses fixed stride (not random) so the subset spans the full index range.
+    Uses fixed stride (not random) so the kept subset spans the full index range.
     For the racecar_single case, pass rng to shuffle before subsampling so
     the val holdout is random rather than always the first 10%.
+
+    The excluded indices form the hidden test split.
     """
     n = max(1, round(len(idxs) * fraction))
     if n >= len(idxs):
-        return idxs
+        return idxs, []
     if rng is not None:
         arr = np.array(idxs)
         rng.shuffle(arr)
-        return arr[:n].tolist()
+        return arr[:n].tolist(), arr[n:].tolist()
     step = len(idxs) / n
-    return [idxs[round(i * step)] for i in range(n)]
+    kept_set = set()
+    kept = []
+    for i in range(n):
+        idx = idxs[round(i * step)]
+        kept.append(idx)
+        kept_set.add(idx)
+    excluded = [idx for idx in idxs if idx not in kept_set]
+    return kept, excluded
 
 
 def assign_splits(records):
@@ -129,17 +141,19 @@ def assign_splits(records):
 
     Applies SAMPLE_FRACTION evenly to each data source so the 30% reduction
     is balanced: racecar_single, racecar_tandem (train+val), cruise (train+val)
-    are all reduced proportionally.
+    are all reduced proportionally. The excluded 30% forms the hidden test split.
 
     Returns:
         splits       — {split_name: [global_idx, ...]}
         domain_groups — {domain_name: [global_idx, ...]}  (train indices only)
+        test_meta    — [{global_idx, domain}, ...] for hidden test set
     """
     rng = np.random.default_rng(SEED)
 
     splits = {k: [] for k in
-              ["train", "val_in_dist", "val_tandem_transfer", "val_ood_cond", "val_ood_re"]}
+              ["train", "val_in_dist", "val_tandem_transfer", "val_ood_cond", "val_ood_re", "test"]}
     domain_groups = {"racecar_single": [], "racecar_tandem": [], "cruise": []}
+    test_meta = []  # [{global_idx, domain}, ...]
 
     # Group records by file_idx
     by_file: dict[int, list] = {}
@@ -149,7 +163,9 @@ def assign_splits(records):
     # --- Rule 1: raceCar_single (file_idx=0) → subsample, then 90/10 train/val ---
     # Shuffle first so val holdout is a random draw, not always the last N samples.
     single_all = [r["global_idx"] for r in by_file[0]]
-    single_keep = _subsample(single_all, SAMPLE_FRACTION, rng=rng)
+    single_keep, single_excluded = _subsample(single_all, SAMPLE_FRACTION, rng=rng)
+    splits["test"].extend(single_excluded)
+    test_meta.extend({"global_idx": idx, "domain": "single"} for idx in single_excluded)
     n_val = max(1, round(len(single_keep) * 0.10))
     splits["val_in_dist"].extend(single_keep[:n_val])
     train_single = single_keep[n_val:]
@@ -160,20 +176,32 @@ def assign_splits(records):
     # Evenly spaced so both low and high stagger/gap values are retained.
     for fi in (1, 3):
         idxs = [r["global_idx"] for r in by_file[fi]]
-        kept = _subsample(idxs, SAMPLE_FRACTION)
+        kept, excluded = _subsample(idxs, SAMPLE_FRACTION)
         splits["train"].extend(kept)
         domain_groups["racecar_tandem"].extend(kept)
+        splits["test"].extend(excluded)
+        test_meta.extend({"global_idx": idx, "domain": "tandem_known"} for idx in excluded)
 
     # --- Rule 3: raceCar tandem Part2 (file_idx=2) → subsample → val_tandem_transfer ---
     idxs_p2 = [r["global_idx"] for r in by_file[2]]
-    splits["val_tandem_transfer"].extend(_subsample(idxs_p2, SAMPLE_FRACTION))
+    kept_p2, excluded_p2 = _subsample(idxs_p2, SAMPLE_FRACTION)
+    splits["val_tandem_transfer"].extend(kept_p2)
+    splits["test"].extend(excluded_p2)
+    test_meta.extend({"global_idx": idx, "domain": "tandem_transfer"} for idx in excluded_p2)
 
     # --- Rule 4: cruise Part1+3 (file_idx=4,6) → subsample first, then frontier split ---
     # Subsample before the frontier computation so the frontier 20% is drawn from
     # the kept subset (preserving the OOD character of the frontier samples).
     cruise_p1p3_all = by_file[4] + by_file[6]
-    cruise_keep_idxs = _subsample(list(range(len(cruise_p1p3_all))), SAMPLE_FRACTION)
+    cruise_all_idxs = list(range(len(cruise_p1p3_all)))
+    cruise_keep_idxs, cruise_excluded_idxs = _subsample(cruise_all_idxs, SAMPLE_FRACTION)
     cruise_p1p3 = [cruise_p1p3_all[i] for i in cruise_keep_idxs]
+
+    # Excluded cruise P1+P3 go to test
+    for i in cruise_excluded_idxs:
+        rec = cruise_p1p3_all[i]
+        splits["test"].append(rec["global_idx"])
+        test_meta.append({"global_idx": rec["global_idx"], "domain": "cruise_known"})
 
     feats = np.array(
         [[r["aoa0"], r["gap"], r["stagger"]] for r in cruise_p1p3],
@@ -200,7 +228,10 @@ def assign_splits(records):
 
     # --- Rule 5: cruise Part2 (file_idx=5) → subsample → val_ood_re ---
     idxs_p5 = [r["global_idx"] for r in by_file[5]]
-    splits["val_ood_re"].extend(_subsample(idxs_p5, SAMPLE_FRACTION))
+    kept_p5, excluded_p5 = _subsample(idxs_p5, SAMPLE_FRACTION)
+    splits["val_ood_re"].extend(kept_p5)
+    splits["test"].extend(excluded_p5)
+    test_meta.extend({"global_idx": idx, "domain": "cruise_ood_re"} for idx in excluded_p5)
 
     # --- Limitation 3 check: NACA overlap for val_tandem_transfer validity ---
     # val_tandem_transfer is meaningful as a "transfer" test only if the tandem
@@ -224,7 +255,7 @@ def assign_splits(records):
         print("  [Transfer check] NO OVERLAP — val_tandem_transfer tests 'unseen shape in tandem',"
               " not single→tandem transfer. Consider this in result interpretation.")
 
-    return splits, domain_groups
+    return splits, domain_groups, test_meta
 
 
 def compute_stats(pickle_files, train_indices):
@@ -326,15 +357,24 @@ def make_quick_manifest():
         "val_tandem_transfer": _pick(2, [0, 150]),
         "val_ood_cond":        _pick(4, [290]) + _pick(6, [290]),
         "val_ood_re":          _pick(5, [0, 150]),
+        "test":                _pick(0, [100, 300]) + _pick(1, [100]) + _pick(5, [100]),
     }
 
+    test_meta = [
+        {"global_idx": i, "domain": "single"} for i in _pick(0, [100, 300])
+    ] + [
+        {"global_idx": i, "domain": "tandem_known"} for i in _pick(1, [100])
+    ] + [
+        {"global_idx": i, "domain": "cruise_ood_re"} for i in _pick(5, [100])
+    ]
     manifest = {
-        "version": 1,
+        "version": 2,
         "created": datetime.now(timezone.utc).isoformat() + " [QUICK/DEBUG]",
         "pickle_paths": [str(p) for p in PICKLE_FILES],
         "splits": splits,
         "domain_groups": domain_groups,
         "split_counts": {k: len(v) for k, v in splits.items()},
+        "test_meta": test_meta,
     }
 
     with open(OUT_MANIFEST, "w") as f:
@@ -368,22 +408,26 @@ def main():
     records = extract_metadata(PICKLE_FILES)
 
     print(f"\n=== Phase 2: Split assignment ===")
-    splits, domain_groups = assign_splits(records)
+    splits, domain_groups, test_meta = assign_splits(records)
 
     # Validate no leakage and correct total
     all_idx = [i for v in splits.values() for i in v]
     assert len(all_idx) == len(set(all_idx)), "BUG: duplicate indices across splits!"
+    n_train_val = len(all_idx) - len(splits["test"])
     expected_approx = round(FILE_SIZES_TOTAL * SAMPLE_FRACTION)
-    print(f"\n  Total assigned: {len(all_idx)} samples "
+    print(f"\n  Train+val assigned: {n_train_val} samples "
           f"(target ≈{expected_approx}, fraction={SAMPLE_FRACTION:.0%})")
+    print(f"  Test (hidden): {len(splits['test'])} samples")
+    print(f"  Total: {len(all_idx)} samples (all {FILE_SIZES_TOTAL} accounted for)")
 
     manifest = {
-        "version": 1,
+        "version": 2,
         "created": datetime.now(timezone.utc).isoformat(),
         "pickle_paths": [str(p) for p in PICKLE_FILES],
         "splits": {k: sorted(v) for k, v in splits.items()},
         "domain_groups": {k: sorted(v) for k, v in domain_groups.items()},
         "split_counts": {k: len(v) for k, v in splits.items()},
+        "test_meta": test_meta,
     }
 
     with open(OUT_MANIFEST, "w") as f:

@@ -41,15 +41,22 @@ When progress stalls, you treat it as information rather than a setback. A plate
 
    Review **each PR individually** — never batch-close an entire round. Follow this sequence:
 
-   **a. Rank all review-ready PRs by `best_mae_surf_p`** (lower is better). Check the W&B run for each PR — the student's reported metrics in the PR body may be stale or incomplete.
+   **a. Score test predictions.** The student's PR results will include a predictions path on PVC (e.g. `/mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt`). Score it against the hidden test set:
+   ```bash
+   python score.py --predictions /mnt/new-pvc/predictions/<student>/<run-id>/predictions.pt
+   ```
+   Post the scored results as a PR comment. This is the authoritative metric — public val metrics in the PR body are for the student's self-assessment only.
 
-   **b. Merge winners sequentially, best first.** A PR is a winner if its `best_mae_surf_p` is lower than the current baseline. Merge aggressively — even small improvements compound over rounds.
+   **b. Rank all review-ready PRs by test `mae_surf_p`** (lower is better). Check the W&B run for each PR — the student's reported metrics in the PR body may be stale or incomplete.
+
+   **c. Merge winners sequentially, best first.** A PR is a winner if its test `mae_surf_p` is lower than the current baseline. Merge aggressively — even small improvements compound over rounds.
 
    For each winner, starting with the best:
    - Squash-merge into the advisor branch:
      ```bash
      gh pr merge <number> --squash
      ```
+   - **Update `LEADERBOARD.md`** with the new entry (rank, experiment name, test metrics, PR number, date). Sort by `mae_surf_p` ascending.
    - **Update your baseline** immediately to the newly merged metrics. All subsequent reviews in this round compare against this updated baseline.
    - Pull the updated advisor branch before attempting the next merge:
      ```bash
@@ -64,14 +71,14 @@ When progress stalls, you treat it as information rather than a setback. A plate
      gh api repos/{owner}/{repo}/issues/<number>/labels -f "labels[]=status:wip" --method POST
      ```
 
-   **c. Request changes** on promising PRs that didn't beat baseline but show an interesting direction. Leave specific feedback on what variation to try next, then send back:
+   **d. Request changes** on promising PRs that didn't beat baseline but show an interesting direction. Leave specific feedback on what variation to try next, then send back:
    ```bash
    gh pr ready <number> --undo
    gh api repos/{owner}/{repo}/issues/<number>/labels/status:review --method DELETE
    gh api repos/{owner}/{repo}/issues/<number>/labels -f "labels[]=status:wip" --method POST
    ```
 
-   **d. Close** only clear dead ends — results significantly worse than baseline, or the approach is fundamentally broken:
+   **e. Close** only clear dead ends — results significantly worse than baseline, or the approach is fundamentally broken:
    ```bash
    gh pr close <number> --delete-branch
    ```

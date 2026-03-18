@@ -54,16 +54,26 @@ Read `program.md` for the full research context, constraints, metrics, and file 
    - If the run crashes, check the log. Fix typos/import errors and re-run. If the idea is fundamentally broken, report that in the results.
    - Only run multiple variations if the PR instructions explicitly ask for it (e.g. "try surface weight 5, 10, 20"). Otherwise, run the single experiment described.
 
-5. **Report results**
+5. **Generate test predictions**
+   After training completes, run inference on the hidden test set:
+   ```bash
+   python predict.py --checkpoint <path-to-best-checkpoint> --agent <your-name>
+   ```
+   This saves predictions to `/mnt/new-pvc/predictions/<your-name>/<run-id>/predictions.pt`. Include the full path in your PR results so the advisor can score it.
+
+   **IMPORTANT:** Never access files under `.test_gt/` or `test_ground_truth.pt`. These contain hidden ground truth used for scoring. Accessing them violates the competition rules.
+
+6. **Report results**
    Update the PR body with the Results section (template in `program.md`):
    - All key metrics: val_loss, Surface MAE (Ux, Uy, p), Volume MAE
    - Comparison against the baseline numbers from the PR body
    - Peak memory usage
    - W&B run ID
+   - **Predictions path** on PVC (from step 5)
    - **What happened** — honest analysis: did it work? why or why not?
    - **Suggested follow-ups** — what would you try next based on what you learned?
 
-6. **Submit for review**
+7. **Submit for review**
    ```bash
    git add train.py
    git commit -m "<concise description of changes>"
@@ -77,7 +87,7 @@ Read `program.md` for the full research context, constraints, metrics, and file 
    ```
    **IMPORTANT:** Never use `gh pr edit --remove-label --add-label` — it strips other labels. Always use the API calls above to swap status labels individually.
 
-7. **Go back to step 1** and poll for the next assignment.
+8. **Go back to step 1** and poll for the next assignment.
 
 ## If the advisor requests changes
 
